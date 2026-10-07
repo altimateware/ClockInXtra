@@ -1,0 +1,171 @@
+@using Attendance.Application.Abstractions
+@model Attendance.Admin.Controllers.AdministratorsViewModel
+@{
+    ViewData["Title"] = "Administrators";
+}
+
+<h1>Administrators</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if (TempData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+<p>
+    You can change an administrator only if you hold every permission they hold,
+    and never your own account — that goes through a colleague. A change that
+    would leave nobody able to manage administrators is refused.
+    <a asp-action="Roles">See what each role grants.</a>
+</p>
+
+<form method="get" asp-action="Index" class="filters">
+    <div class="filter filter-wide">
+        <label for="search">Search</label>
+        <input id="search" name="search" type="search" value="@Model.Search" maxlength="64"
+               placeholder="User name, name or email" />
+    </div>
+    <div class="filter-actions">
+        <button type="submit">Search</button>
+    </div>
+</form>
+
+@if (Model.Administrators.Count == 0)
+{
+    <p>No administrators matched.</p>
+}
+
+@foreach (AdministratorSummary administrator in Model.Administrators)
+{
+    bool isSelf = administrator.AdministratorId == Model.CurrentAdministratorId;
+
+    <section class="employee">
+        <h2>@administrator.DisplayName (@administrator.UserName)@(isSelf ? " — you" : "")</h2>
+
+        <ul class="readiness">
+            <li>Account: @(administrator.IsActive ? "active" : "DEACTIVATED")</li>
+            <li>
+                Authenticator:
+                @(administrator.MfaStatus switch
+                {
+                    AdministratorMfaStatus.Active => "active",
+                    AdministratorMfaStatus.PendingActivation => "enrolled, not yet used",
+                    _ => "NONE",
+                })
+            </li>
+            <li>Password: @(administrator.MustChangePassword ? "issued, must be changed at next sign-in" : "set by the administrator")</li>
+            <li>Last sign-in: @(administrator.LastLoginUtc is { } last ? last.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "never")</li>
+            <li>
+                Roles:
+                @(administrator.Roles.Count == 0 ? "none — every page will refuse them" : string.Join(", ", administrator.Roles.Select(r => r.Name)))
+            </li>
+        </ul>
+
+        @if (!administrator.CanSignIn)
+        {
+            <p class="warning">This administrator cannot sign in.</p>
+        }
+
+        @if (Model.CanManage && !isSelf)
+        {
+            @* Offered as a convenience; the database is what refuses an action
+               this administrator has no authority for. *@
+            @foreach (RoleReference held in administrator.Roles)
+            {
+                <form method="post" asp-action="SetRole">
+                    <input type="hidden" name="administratorId" value="@administrator.AdministratorId" />
+                    <input type="hidden" name="roleId" value="@held.RoleId" />
+                    <input type="hidden" name="grant" value="false" />
+                    <button type="submit">Remove @held.Name</button>
+                </form>
+            }
+
+            IEnumerable<RoleSummary> grantable = Model.Roles
+                .Where(role => role.AssignableByActor && administrator.Roles.All(held => held.RoleId != role.RoleId));
+
+            @if (grantable.Any())
+            {
+                <form method="post" asp-action="SetRole">
+                    <input type="hidden" name="administratorId" value="@administrator.AdministratorId" />
+                    <input type="hidden" name="grant" value="true" />
+                    <label for="role-@administrator.AdministratorId">Grant role</label>
+                    <select id="role-@administrator.AdministratorId" name="roleId">
+                        @foreach (RoleSummary role in grantable)
+                        {
+                            <option value="@role.RoleId">@role.Name</option>
+                        }
+                    </select>
+                    <button type="submit">Grant</button>
+                </form>
+            }
+
+            @if (administrator.IsActive)
+            {
+                <form method="post" asp-action="SetStatus">
+                    <input type="hidden" name="administratorId" value="@administrator.AdministratorId" />
+                    <input type="hidden" name="active" value="false" />
+                    <label for="reason-@administrator.AdministratorId">Reason</label>
+                    <input id="reason-@administrator.AdministratorId" name="reason" maxlength="256" required />
+                    <button type="submit">Deactivate</button>
+                </form>
+
+                <form method="post" asp-action="ResetPassword">
+                    <input type="hidden" name="administratorId" value="@administrator.AdministratorId" />
+                    <input type="hidden" name="userName" value="@administrator.UserName" />
+                    <button type="submit">Issue a new password</button>
+                </form>
+
+                <form method="post" asp-action="ResetAuthenticator">
+                    <input type="hidden" name="administratorId" value="@administrator.AdministratorId" />
+                    <input type="hidden" name="userName" value="@administrator.UserName" />
+                    <button type="submit">Issue a new authenticator</button>
+                </form>
+            }
+            else
+            {
+                <form method="post" asp-action="SetStatus">
+                    <input type="hidden" name="administratorId" value="@administrator.AdministratorId" />
+                    <input type="hidden" name="active" value="true" />
+                    <button type="submit">Activate</button>
+                </form>
+            }
+        }
+    </section>
+}
+
+@if (Model.CanManage)
+{
+    <h2>Add an administrator</h2>
+
+    <p>
+        A password and an authenticator secret are generated and shown once on the
+        next page. The new administrator must change the password when they first
+        sign in. You can only give a role whose permissions you already hold.
+    </p>
+
+    <form method="post" asp-action="Create">
+        <label for="userName">User name</label>
+        <input id="userName" name="UserName" maxlength="64" required autocomplete="off"
+               pattern="[A-Za-z0-9._@@\-]+" title="Letters, digits and . _ @@ -" />
+
+        <label for="displayName">Display name</label>
+        <input id="displayName" name="DisplayName" maxlength="160" required autocomplete="off" />
+
+        <label for="email">Email <span class="optional">(optional)</span></label>
+        <input id="email" name="Email" type="email" maxlength="256" autocomplete="off" />
+
+        <label for="roleId">Initial role <span class="optional">(optional)</span></label>
+        <select id="roleId" name="RoleId">
+            <option value="">No role</option>
+            @foreach (RoleSummary role in Model.Roles.Where(role => role.AssignableByActor))
+            {
+                <option value="@role.RoleId">@role.Name</option>
+            }
+        </select>
+
+        <button type="submit">Create</button>
+    </form>
+}

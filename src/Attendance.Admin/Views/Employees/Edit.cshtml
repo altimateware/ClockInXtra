@@ -1,0 +1,58 @@
+@using Attendance.Admin.Models
+@model Attendance.Admin.Controllers.EmployeeEditViewModel
+@{
+    ViewData["Title"] = "Edit employee";
+    bool canManage = User.HasClaim(
+        Attendance.Admin.Security.Permissions.ClaimType,
+        Attendance.Admin.Security.Permissions.MobileUserManage);
+}
+
+<p><a asp-action="Index" asp-route-onlyNotReady="false" asp-route-search="@Model.UserId">← Employees</a></p>
+
+<h1>@Model.FirstName @Model.LastName</h1>
+
+@if (ViewData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+<dl>
+    <dt>User identifier</dt>
+    <dd><code>@Model.UserId</code> — what they sign in with; not editable.</dd>
+</dl>
+
+@if (canManage)
+{
+    <form method="post" asp-action="Edit" asp-route-id="@Model.MobileUserId" class="employee-form">
+        <input type="hidden" name="rowVersion" value="@Model.RowVersion" />
+
+        @await Html.PartialAsync("_EmployeeFields", new EmployeeFields
+        {
+            EmployeeNumber = Model.EmployeeNumber,
+            FirstName = Model.FirstName,
+            LastName = Model.LastName,
+            Email = Model.Email,
+            PhoneNumber = Model.PhoneNumber,
+            Department = Model.Department,
+            JobTitle = Model.JobTitle,
+            Departments = ViewData["Departments"] as IReadOnlyList<string> ?? [],
+            JobTitles = ViewData["JobTitles"] as IReadOnlyList<string> ?? [],
+            KeepDepartment = Model.StoredDepartment,
+            KeepJobTitle = Model.StoredJobTitle,
+            CanManageLists = canManage,
+        })
+
+        <button type="submit">Save changes</button>
+    </form>
+}
+else
+{
+    <dl>
+        <dt>Employee number</dt><dd>@Model.EmployeeNumber</dd>
+        <dt>Email</dt><dd>@Model.Email</dd>
+        <dt>Phone</dt><dd>@Model.PhoneNumber</dd>
+        <dt>Department</dt><dd>@Model.Department</dd>
+        <dt>Job title</dt><dd>@Model.JobTitle</dd>
+    </dl>
+    <p>Changing these details needs the permission to manage employees.</p>
+}

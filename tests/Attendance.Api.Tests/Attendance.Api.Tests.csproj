@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- API tests, including the security cases from Claude.md §50: replayed
+       signatures, clock skew, revoked devices, brute force and error
+       disclosure. -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Attendance.Api\Attendance.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- One definition of the database the suite runs against, and of the
+         waiting limits that keep these tests honest on a loaded machine. -->
+    <Compile Include="..\Shared\TestEnvironment.cs" Link="TestEnvironment.cs" />
+  </ItemGroup>
+
+</Project>

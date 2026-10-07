@@ -1,0 +1,46 @@
+@using Attendance.Application.Abstractions
+@model IReadOnlyList<RoleSummary>
+@{
+    ViewData["Title"] = "Roles";
+}
+
+<h1>Roles</h1>
+
+<p>
+    A role's name is a label; its permissions are the authority. Read the list
+    before granting one — "Attendance Administrator" sounds narrow and can approve
+    and revoke devices, and request attendance corrections.
+</p>
+
+<p>
+    Roles marked <em>you can grant</em> carry only permissions you already hold.
+    You cannot hand out authority you do not have.
+</p>
+
+@foreach (RoleSummary role in Model)
+{
+    <section class="employee">
+        <h2>@role.Name@(role.AssignableByActor ? " — you can grant" : "")</h2>
+
+        @if (!string.IsNullOrWhiteSpace(role.Description))
+        {
+            <p>@role.Description</p>
+        }
+
+        @if (role.Permissions.Count == 0)
+        {
+            <p>Grants nothing.</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (PermissionSummary permission in role.Permissions)
+                {
+                    <li><code>@permission.Code</code> — @permission.Description</li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+<p><a asp-action="Index">Back to administrators</a></p>

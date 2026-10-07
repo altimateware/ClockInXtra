@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin-portal",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Attendance.Admin", "--launch-profile", "https"],
+      "port": 7196,
+      "url": "https://localhost:7196"
+    }
+  ]
+}

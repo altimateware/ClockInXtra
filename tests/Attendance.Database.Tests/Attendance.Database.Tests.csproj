@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Stored procedure and concurrency tests against a real SQL Server instance.
+
+    These cover what cannot be proven anywhere else: that two simultaneous
+    clock-ins on different application servers cannot both create a record,
+    that a replayed nonce is refused, and that the transaction leaves no
+    partial attendance record (Claude.md §45, §50).
+
+    The SQL script suite in database/tests runs the same assertions from
+    sqlcmd, so the guarantees can be verified during deployment without the
+    .NET toolchain present.
+  -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Dapper" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Attendance.Infrastructure\Attendance.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- One definition of the database the suite runs against, and of the
+         waiting limits that keep these tests honest on a loaded machine. -->
+    <Compile Include="..\Shared\TestEnvironment.cs" Link="TestEnvironment.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,49 @@
+@model Attendance.Admin.Controllers.EnrolmentViewModel
+@{
+    ViewData["Title"] = "Authenticator enrolled";
+}
+
+<h1>Authenticator enrolled for @Model.UserId</h1>
+
+<div class="warning">
+    <p>
+        <strong>This secret is shown once.</strong> It is not stored anywhere in a
+        form that can be read back, so there is no way to display it again. If the
+        employee does not add it now, enrol again and a new secret will be issued.
+    </p>
+    <p>
+        Have the employee add it on their own phone while they are with you, then
+        enter a code below to prove it works. Do not send it by email or message.
+    </p>
+</div>
+
+<h2>Add to an authenticator app</h2>
+
+<p>Enter this key manually, choosing "time-based":</p>
+
+<p class="secret"><code>@Model.SharedSecret</code></p>
+
+<p>Or use this setup URI:</p>
+
+<p class="secret"><code>@Model.OtpAuthUri</code></p>
+
+<p>
+    Settings: SHA-1, 6 digits, 30-second period — the Key URI Format defaults,
+    which is what ordinary authenticator applications assume.
+</p>
+
+<h2>Prove it works</h2>
+
+<p>
+    The authenticator is not usable until a code from it is accepted. Until then
+    the employee cannot clock in.
+</p>
+
+<form method="post" asp-action="Activate">
+    <input type="hidden" name="mobileUserId" value="@Model.MobileUserId" />
+    <label for="code">Code from the employee's phone</label>
+    <input id="code" name="code" inputmode="numeric" maxlength="6" autocomplete="off" autofocus />
+    <button type="submit">Activate</button>
+</form>
+
+<p><a asp-action="Index">Back to employees</a></p>

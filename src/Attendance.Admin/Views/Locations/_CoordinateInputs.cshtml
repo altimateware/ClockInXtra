@@ -1,0 +1,51 @@
+@model Attendance.Admin.Models.CoordinateInputs
+@{
+    string p = Model.IdPrefix;
+}
+
+@* The limits below match CK_OfficeLocation_Latitude / _Longitude / _Radius and
+   usp_OfficeLocation_Create / _Update, which check them again: the browser's
+   checks are a convenience, the database's are the control. Six decimal places
+   is the column's precision (DECIMAL(9, 6)), about 11 cm at the equator. *@
+
+<fieldset class="coordinates">
+    <legend>Position</legend>
+
+    @* Filled in by js/locations.js when coordinates are pasted as one value,
+       the way map applications copy them ("6.465422, 3.406448"). Without
+       script it is simply unused; the two boxes below are what is submitted. *@
+    <div class="paste-coordinates" hidden>
+        <label for="@p-paste">Paste coordinates <span class="optional">(optional)</span></label>
+        <input id="@p-paste" data-coordinates-for="@p" placeholder="e.g. 6.465422, 3.406448" autocomplete="off" />
+        <p class="hint" id="@p-paste-hint" aria-live="polite">Paste "latitude, longitude" to fill both boxes.</p>
+    </div>
+
+    <div class="coordinate-pair">
+        <div>
+            <label for="@p-lat">Latitude</label>
+            <div class="with-unit">
+                <input id="@p-lat" name="Latitude" type="number" inputmode="decimal"
+                       min="-90" max="90" step="0.000001" value="@Model.Latitude" required />
+                <span class="unit">°</span>
+            </div>
+            <p class="hint">−90 (south) to 90 (north)</p>
+        </div>
+        <div>
+            <label for="@p-lon">Longitude</label>
+            <div class="with-unit">
+                <input id="@p-lon" name="Longitude" type="number" inputmode="decimal"
+                       min="-180" max="180" step="0.000001" value="@Model.Longitude" required />
+                <span class="unit">°</span>
+            </div>
+            <p class="hint">−180 (west) to 180 (east)</p>
+        </div>
+    </div>
+</fieldset>
+
+<label for="@p-radius">Allowed radius</label>
+<div class="with-unit">
+    <input id="@p-radius" name="AllowedRadiusMeters" type="number" inputmode="decimal"
+           min="1" max="10000" step="0.01" list="radius-suggestions" value="@Model.RadiusMeters" required />
+    <span class="unit">metres</span>
+</div>
+<p class="hint">1 to 10,000 metres. The requirement is 5; compare it with the median accuracy recorded here before narrowing or widening it.</p>

@@ -1,0 +1,205 @@
+@using System.Globalization
+@using Attendance.Application.Abstractions
+@model IReadOnlyList<Attendance.Application.Abstractions.OfficeLocationDetail>
+@{
+    ViewData["Title"] = "Office locations";
+    int days = ViewData["StatisticsDays"] is int d ? d : 30;
+    bool anyActive = Model.Any(location => location.IsActive);
+
+    // Values are written back into inputs in invariant form: a number input
+    // reads "6.465422", and a culture that writes "6,465422" would leave the
+    // box empty — and the office would be saved at 0°, 0°.
+    static string Invariant(decimal value, string format) => value.ToString(format, CultureInfo.InvariantCulture);
+    static string? Metres(decimal? value) => value?.ToString("0.##", CultureInfo.InvariantCulture);
+
+    int[] periods = [7, 30, 90, 365];
+}
+
+<h1>Office locations</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if (TempData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+@if (!anyActive)
+{
+    <div class="warning">
+        <h2>No active office</h2>
+        <p>
+            Every location check refuses while no office is active, so nobody can
+            clock in anywhere. Add one below, or enable an existing one.
+        </p>
+    </div>
+}
+
+<p>
+    A position is accepted when it falls within an office's radius. The accuracy
+    figures show what employees' devices actually reported at each office —
+    <strong>if the median accuracy is worse than the radius, half of all honest
+    attempts are being asked for precision the hardware does not have.</strong>
+    That is a real limitation of consumer GPS, not a fault in the calculation.
+</p>
+
+<form method="get" asp-action="Index" class="filters">
+    <div class="filter">
+        <label for="statisticsDays">Accuracy figures over</label>
+        <select id="statisticsDays" name="statisticsDays">
+            @foreach (int period in periods)
+            {
+                <option value="@period" selected="@(period == days)">the last @period days</option>
+            }
+        </select>
+    </div>
+    <div class="filter-actions">
+        <button type="submit">Show</button>
+    </div>
+</form>
+
+@* Suggested radii, offered by every radius box. Five metres is the stated
+   requirement; the rest are there because the accuracy figures on this page
+   are often the reason to choose something wider. Any value can still be typed. *@
+<datalist id="radius-suggestions">
+    <option value="5"></option>
+    <option value="10"></option>
+    <option value="20"></option>
+    <option value="30"></option>
+    <option value="50"></option>
+    <option value="100"></option>
+</datalist>
+
+@foreach (OfficeLocationDetail location in Model)
+{
+    string p = "o" + location.OfficeLocationId.ToString(CultureInfo.InvariantCulture);
+
+    <section class="office">
+        <h2>
+            @location.Name
+            @if (location.IsActive)
+            {
+                <span class="badge">Active</span>
+            }
+            else
+            {
+                <span class="badge badge-warn">Disabled</span>
+            }
+        </h2>
+
+        @if (!string.IsNullOrWhiteSpace(location.Description))
+        {
+            <p>@location.Description</p>
+        }
+
+        <dl>
+            <dt>Position</dt>
+            <dd><code>@Invariant(location.Latitude, "0.000000"), @Invariant(location.Longitude, "0.000000")</code></dd>
+
+            <dt>Radius</dt>
+            <dd>@Metres(location.AllowedRadiusMeters) m</dd>
+
+            @if (location.EventCount > 0)
+            {
+                <dt>Attendance events</dt>
+                <dd>@location.EventCount in the last @days days</dd>
+
+                <dt>Median accuracy</dt>
+                <dd>
+                    @(Metres(location.MedianAccuracyMeters) ?? "—") m
+                    @if (location.MedianAccuracyMeters > location.AllowedRadiusMeters)
+                    {
+                        <strong class="warning-text">
+                            — worse than this office's @Metres(location.AllowedRadiusMeters) m radius.
+                            Consider widening it, or expect refusals.
+                        </strong>
+                    }
+                </dd>
+
+                <dt>Worst accuracy</dt>
+                <dd>@(Metres(location.WorstAccuracyMeters) ?? "—") m</dd>
+
+                <dt>Greatest distance accepted</dt>
+                <dd>@(Metres(location.MaxDistanceMeters) ?? "—") m</dd>
+            }
+            else
+            {
+                <dt>Attendance events</dt>
+                <dd>None recorded here in the last @days days.</dd>
+            }
+        </dl>
+
+        <details>
+            <summary>Edit this office</summary>
+
+            <form method="post" asp-action="Update" class="location-form">
+                <input type="hidden" name="officeLocationId" value="@location.OfficeLocationId" />
+                <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(location.RowVersion)" />
+                <input type="hidden" name="IsActive" value="@location.IsActive.ToString().ToLowerInvariant()" />
+
+                <label for="@p-name">Name</label>
+                <input id="@p-name" name="Name" value="@location.Name" maxlength="120" required />
+
+                @* Carried in the edit form so that saving does not erase it: it
+                   was once missing here, and every edit blanked the description. *@
+                <label for="@p-description">Description <span class="optional">(optional)</span></label>
+                <textarea id="@p-description" name="Description" maxlength="400" rows="2">@location.Description</textarea>
+
+                @await Html.PartialAsync("_CoordinateInputs", new Attendance.Admin.Models.CoordinateInputs(
+                    p, Invariant(location.Latitude, "0.000000"), Invariant(location.Longitude, "0.000000"),
+                    Invariant(location.AllowedRadiusMeters, "0.##")))
+
+                <button type="submit">Save changes</button>
+            </form>
+        </details>
+
+        <form method="post" asp-action="SetStatus" class="status-form">
+            <input type="hidden" name="officeLocationId" value="@location.OfficeLocationId" />
+            <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(location.RowVersion)" />
+            <input type="hidden" name="isActive" value="@((!location.IsActive).ToString().ToLowerInvariant())" />
+
+            @if (location.IsActive)
+            {
+                @* Disabling stops everyone clocking in here, so the reason is
+                   required: it goes into the audit trail. *@
+                <label for="@p-reason">Reason for disabling</label>
+                <input id="@p-reason" name="reason" maxlength="256" required
+                       placeholder="e.g. Office closed for refurbishment" />
+                <button type="submit" class="danger">Disable office</button>
+            }
+            else
+            {
+                <label for="@p-reason">Reason for enabling <span class="optional">(optional)</span></label>
+                <input id="@p-reason" name="reason" maxlength="256" />
+                <button type="submit">Enable office</button>
+            }
+        </form>
+    </section>
+}
+
+<h2>Add an office</h2>
+
+<form method="post" asp-action="Create" class="location-form office">
+    <label for="new-name">Name</label>
+    <input id="new-name" name="Name" maxlength="120" required />
+
+    <label for="new-description">Description <span class="optional">(optional)</span></label>
+    <textarea id="new-description" name="Description" maxlength="400" rows="2"></textarea>
+
+    @* Five metres is what the requirement specifies. The accuracy figures above
+       are the evidence for whether it is achievable at a given site. *@
+    @await Html.PartialAsync("_CoordinateInputs", new Attendance.Admin.Models.CoordinateInputs("new", null, null, "5"))
+
+    <label>
+        <input type="checkbox" name="IsActive" value="true" checked />
+        Active from the moment it is created
+    </label>
+
+    <button type="submit">Create office</button>
+</form>
+
+@section Scripts {
+    <script src="~/js/locations.js" asp-append-version="true"></script>
+}

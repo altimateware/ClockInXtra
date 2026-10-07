@@ -1,0 +1,126 @@
+@using Attendance.Application.Abstractions
+@model Attendance.Admin.Controllers.ReferenceListsViewModel
+@{
+    ViewData["Title"] = "Departments and job titles";
+    bool canManage = User.HasClaim(
+        Attendance.Admin.Security.Permissions.ClaimType,
+        Attendance.Admin.Security.Permissions.MobileUserManage);
+
+    (ReferenceList List, string Heading, string Singular, IReadOnlyList<ReferenceListEntry> Entries)[] lists =
+    [
+        (ReferenceList.Department, "Departments", "department", Model.Departments),
+        (ReferenceList.JobTitle, "Job titles", "job title", Model.JobTitles),
+    ];
+}
+
+<h1>Departments and job titles</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if (TempData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+<p>
+    An employee's department and job title are chosen from these lists. Renaming
+    an entry renames it for every employee who holds it. An entry is never
+    deleted: when it stops being used, it is withdrawn, which removes it from the
+    choices while the employees who hold it keep it.
+</p>
+
+<div class="list-columns">
+    @foreach ((ReferenceList list, string heading, string singular, IReadOnlyList<ReferenceListEntry> entries) in lists)
+    {
+        <section class="setting">
+            <h2>@heading</h2>
+
+            @if (canManage)
+            {
+                <form method="post" asp-action="Add" class="inline-form">
+                    <input type="hidden" name="list" value="@list" />
+                    <label for="add-@list">Add a @singular</label>
+                    <div class="inline-row">
+                        <input id="add-@list" name="name" maxlength="120" required autocomplete="off" />
+                        <button type="submit">Add</button>
+                    </div>
+                </form>
+            }
+
+            @if (entries.Count == 0)
+            {
+                <p>None yet. Employees cannot be added until there is at least one.</p>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Employees</th>
+                                <th>Offered</th>
+                                @if (canManage)
+                                {
+                                    <th><span class="visually-hidden">Actions</span></th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (ReferenceListEntry entry in entries)
+                            {
+                                string rowVersion = Convert.ToBase64String(entry.RowVersion);
+                                string id = $"{list}-{entry.EntryId}";
+
+                                <tr>
+                                    <td>
+                                        @if (canManage)
+                                        {
+                                            <form method="post" asp-action="Rename" class="inline-row">
+                                                <input type="hidden" name="list" value="@list" />
+                                                <input type="hidden" name="entryId" value="@entry.EntryId" />
+                                                <input type="hidden" name="rowVersion" value="@rowVersion" />
+                                                <label for="name-@id" class="visually-hidden">Name</label>
+                                                <input id="name-@id" name="name" value="@entry.Name" maxlength="120" required />
+                                                <button type="submit" class="secondary">Rename</button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            @entry.Name
+                                        }
+                                    </td>
+                                    <td>@entry.EmployeeCount</td>
+                                    <td>
+                                        @if (entry.IsActive)
+                                        {
+                                            <span class="badge">Offered</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge badge-warn">Withdrawn</span>
+                                        }
+                                    </td>
+                                    @if (canManage)
+                                    {
+                                        <td>
+                                            <form method="post" asp-action="SetActive">
+                                                <input type="hidden" name="list" value="@list" />
+                                                <input type="hidden" name="entryId" value="@entry.EntryId" />
+                                                <input type="hidden" name="rowVersion" value="@rowVersion" />
+                                                <input type="hidden" name="isActive" value="@((!entry.IsActive).ToString().ToLowerInvariant())" />
+                                                <button type="submit" class="@(entry.IsActive ? "danger" : "secondary")">@(entry.IsActive ? "Withdraw" : "Offer again")</button>
+                                            </form>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</div>

@@ -1,0 +1,179 @@
+@using Attendance.Admin.Models
+@using Attendance.Application.Abstractions
+@model Attendance.Admin.Controllers.SettingsViewModel
+@{
+    ViewData["Title"] = "Settings";
+    var blocking = Model.Settings.Where(s => s.IsMandatoryForAttendance && s.IsUnset).ToList();
+}
+
+<h1>Settings</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if (TempData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+@if (blocking.Count > 0)
+{
+    <div class="warning">
+        <h2>Attendance is not operating</h2>
+        <p>
+            @blocking.Count setting@(blocking.Count == 1 ? " is" : "s are") still undecided,
+            and clock-in or clock-out will refuse until @(blocking.Count == 1 ? "it is" : "they are") set.
+            The system refuses rather than assuming a value, so nobody's attendance
+            is recorded against a rule the business did not choose.
+        </p>
+        <ul>
+            @foreach (ApplicationSettingRow setting in blocking)
+            {
+                <li>@SettingInput.Title(setting.SettingKey)</li>
+            }
+        </ul>
+    </div>
+}
+
+@foreach (IGrouping<string, ApplicationSettingRow> category in Model.Settings.GroupBy(s => s.Category))
+{
+    <h2>@category.Key</h2>
+
+    @foreach (ApplicationSettingRow setting in category)
+    {
+        string id = "v-" + setting.SettingKey.Replace('.', '-');
+        string hintId = id + "-hint";
+        SettingInput.Kind kind = SettingInput.KindOf(setting);
+        bool blankAllowed = setting.BlankMeaning is { Length: > 0 };
+
+        @* The empty choice in a list: what leaving it blank means, when that is
+           a real decision; otherwise "undecided", which is what it is. *@
+        string blankLabel = blankAllowed ? setting.BlankMeaning! : "— undecided —";
+
+        <section class="setting">
+            <h3>
+                @SettingInput.Title(setting.SettingKey)
+                @if (setting.IsUnset)
+                {
+                    <span class="badge badge-warn">Undecided</span>
+                }
+                else if (setting.SettingValue is null)
+                {
+                    @* A blank confirmed as the decision. Said explicitly so it
+                       does not read as something forgotten. *@
+                    <span class="badge">@(setting.BlankMeaning ?? "Left blank by decision")</span>
+                }
+            </h3>
+            <p class="setting-key"><code>@setting.SettingKey</code></p>
+
+            <p>@setting.Description</p>
+
+            <form method="post" asp-action="Set">
+                <input type="hidden" name="settingKey" value="@setting.SettingKey" />
+                <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(setting.RowVersion)" />
+
+                @switch (kind)
+                {
+                    case SettingInput.Kind.TimeZone:
+                        <label for="@id">Time zone</label>
+                        <select id="@id" name="settingValue" aria-describedby="@hintId">
+                            <option value="">@blankLabel</option>
+                            @foreach (TimeZoneOption zone in Model.TimeZones)
+                            {
+                                <option value="@zone.TimeZoneId" selected="@(zone.TimeZoneId == setting.SettingValue)">
+                                    (UTC@(zone.CurrentUtcOffset)) @zone.TimeZoneId@(zone.IsCurrentlyDaylightSaving ? " — daylight saving now" : "")
+                                </option>
+                            }
+                        </select>
+                        break;
+
+                    case SettingInput.Kind.Choice:
+                        <label for="@id">Value</label>
+                        <select id="@id" name="settingValue" aria-describedby="@hintId">
+                            <option value="">@blankLabel</option>
+                            @foreach (string option in SettingInput.Choices(setting))
+                            {
+                                <option value="@option" selected="@(option == setting.SettingValue)">@SettingInput.Label(option)</option>
+                            }
+                        </select>
+                        break;
+
+                    case SettingInput.Kind.YesNo:
+                        <fieldset class="choice" aria-describedby="@hintId">
+                            <legend>Value</legend>
+                            <label><input type="radio" name="settingValue" value="true" checked="@(setting.SettingValue == "true")" /> Yes</label>
+                            <label><input type="radio" name="settingValue" value="false" checked="@(setting.SettingValue == "false")" /> No</label>
+                            <label><input type="radio" name="settingValue" value="" checked="@(setting.SettingValue is null)" /> @blankLabel</label>
+                        </fieldset>
+                        break;
+
+                    case SettingInput.Kind.Time:
+                        <label for="@id">Time @(setting.SettingKey.StartsWith("Attendance.", StringComparison.Ordinal) ? "(business time zone)" : "")</label>
+                        <div class="with-unit">
+                            <input id="@id" name="settingValue" type="time" step="60"
+                                   value="@SettingInput.TimeValue(setting.SettingValue)" aria-describedby="@hintId" />
+                        </div>
+                        break;
+
+                    case SettingInput.Kind.WholeNumber:
+                    case SettingInput.Kind.FractionalNumber:
+                        <label for="@id">Value</label>
+                        <div class="with-unit">
+                            <input id="@id" name="settingValue" type="number" inputmode="@(kind == SettingInput.Kind.WholeNumber ? "numeric" : "decimal")"
+                                   step="@(kind == SettingInput.Kind.WholeNumber ? "1" : "any")"
+                                   min="@SettingInput.Bound(setting.MinValue)" max="@SettingInput.Bound(setting.MaxValue)"
+                                   value="@setting.SettingValue" aria-describedby="@hintId" />
+                            @if (!string.IsNullOrWhiteSpace(setting.Unit))
+                            {
+                                <span class="unit">@setting.Unit</span>
+                            }
+                        </div>
+                        break;
+
+                    case SettingInput.Kind.Version:
+                        <label for="@id">Version</label>
+                        <input id="@id" name="settingValue" inputmode="decimal" maxlength="32"
+                               pattern="[0-9]+(\.[0-9]+)*" placeholder="e.g. 1.4.0"
+                               value="@setting.SettingValue" aria-describedby="@hintId" />
+                        break;
+
+                    default:
+                        <label for="@id">Value</label>
+                        <input id="@id" name="settingValue" maxlength="400"
+                               value="@setting.SettingValue" aria-describedby="@hintId" />
+                        break;
+                }
+
+                <p class="hint" id="@hintId">
+                    Must be @SettingInput.Rule(setting).
+                    @if (kind is SettingInput.Kind.Time or SettingInput.Kind.WholeNumber or SettingInput.Kind.FractionalNumber or SettingInput.Kind.Version && blankAllowed)
+                    {
+                        <text>Clear the box to leave it blank.</text>
+                    }
+                </p>
+
+                <label>
+                    @* Setting a value and accepting it as the business decision are
+                       separate acts, so the trail records who took responsibility.
+                       Ticked already when the setting is confirmed: saving without
+                       it withdraws the confirmation, and an administrator adjusting
+                       a confirmed value must not do that by accident. *@
+                    <input type="checkbox" name="confirm" value="true" checked="@(!setting.RequiresBusinessConfirmation)" />
+                    Confirm this as the business decision
+                </label>
+
+                <button type="submit">Save</button>
+            </form>
+
+            @if (setting.ConfirmedByUserName is { Length: > 0 } confirmedBy)
+            {
+                <small>Confirmed by @confirmedBy.</small>
+            }
+            else if (!setting.IsUnset)
+            {
+                <small class="warning">Set, but not yet confirmed as a business decision.</small>
+            }
+        </section>
+    }
+}

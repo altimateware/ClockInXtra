@@ -1,0 +1,62 @@
+@model Attendance.Admin.Controllers.IssuedCredentialsViewModel
+@{
+    ViewData["Title"] = "Credentials issued";
+}
+
+<h1>@Model.Heading</h1>
+
+@if (Model.Warning is not null)
+{
+    <p class="warning">@Model.Warning</p>
+}
+
+<div class="warning">
+    <p>
+        <strong>This is shown once.</strong> Only a hash of the password and an
+        encrypted copy of the authenticator secret were stored, so there is no way
+        to display them again. If they are lost before reaching
+        <code>@Model.UserName</code>, issue new ones.
+    </p>
+    <p>
+        Hand them over in person. Do not send them by email or message, and do not
+        paste them into a ticket.
+    </p>
+</div>
+
+<dl>
+    <dt>User name</dt>
+    <dd><code>@Model.UserName</code></dd>
+
+    @if (Model.Password is not null)
+    {
+        <dt>Password</dt>
+        <dd class="secret"><code>@Model.Password</code></dd>
+    }
+</dl>
+
+@if (Model.Password is not null)
+{
+    <p>The hyphens are part of the password.</p>
+}
+
+@if (Model.SharedSecret is not null)
+{
+    <h2>Authenticator</h2>
+
+    <p>Add it to an authenticator app on their own phone. Enter this key manually, choosing "time-based":</p>
+    <p class="secret"><code>@Model.SharedSecret</code></p>
+
+    <p>Or use this setup URI:</p>
+    <p class="secret"><code>@Model.OtpAuthUri</code></p>
+
+    <p>
+        It becomes active the first time a code from it is accepted at sign-in.
+    </p>
+}
+
+@if (Model.Note is not null)
+{
+    <p>@Model.Note</p>
+}
+
+<p><a asp-action="Index">Back to administrators</a></p>

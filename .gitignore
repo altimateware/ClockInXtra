@@ -1,0 +1,34 @@
+# ClockInXtra — repository-wide ignores.
+# mobile/.gitignore and mobile/android/.gitignore add the Flutter and Gradle rules.
+
+# ---- Secrets: never committed (Claude.md §47) --------------------------------
+# Environment-specific settings carry connection strings and thumbprints and are
+# deployed from the organisation's secret store, not from source control.
+appsettings.Production.json
+appsettings.Staging.json
+appsettings.*.local.json
+*.pfx
+*.p12
+*.pem
+*.key
+*.jks
+*.keystore
+key.properties
+# Data Protection key rings, if one is ever pointed at the working tree.
+keyring/
+**/DataProtection-Keys/
+
+# ---- .NET build output --------------------------------------------------------
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+.vs/
+
+# ---- Logs ---------------------------------------------------------------------
+logs/
+*.log
+
+# ---- Ledger digests exported during local testing -----------------------------
+clockinxtra-ledger-block*.json

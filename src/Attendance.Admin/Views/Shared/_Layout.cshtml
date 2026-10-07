@@ -1,0 +1,118 @@
+@using Microsoft.AspNetCore.Mvc.TagHelpers
+@using Attendance.Admin.Security
+@{
+    bool signedIn = User.Identity?.IsAuthenticated == true;
+
+    string controller = ViewContext.RouteData.Values["controller"] as string ?? string.Empty;
+    string action = ViewContext.RouteData.Values["action"] as string ?? string.Empty;
+
+    bool Has(string permission) => User.HasClaim(Permissions.ClaimType, permission);
+
+    // Marks the link for the page being shown, for sighted users (styling) and
+    // screen readers (aria-current) alike. Reports holds three pages, so the
+    // action is compared too where one is given.
+    string? Current(string linkController, string? linkAction = null) =>
+        string.Equals(controller, linkController, StringComparison.OrdinalIgnoreCase)
+        && (linkAction is null || string.Equals(action, linkAction, StringComparison.OrdinalIgnoreCase))
+            ? "page"
+            : null;
+
+    bool showPeople = Has(Permissions.MobileUserView) || Has(Permissions.DeviceView) || Has(Permissions.AdministratorView);
+    bool showAttendance = Has(Permissions.ReportView)
+        || Has(Permissions.AttendanceCorrect) || Has(Permissions.AttendanceApproveCorrection);
+    bool showSystem = Has(Permissions.OfficeLocationView) || Has(Permissions.SettingView) || Has(Permissions.AuditView);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — ClockInXtra administration</title>
+    @* Only same-origin styles: the content security policy permits no others,
+       and no inline style attribute will be honoured. *@
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body class="@(signedIn ? "with-sidebar" : "signed-out")">
+    @if (signedIn)
+    {
+        <aside class="sidebar">
+            <a class="brand" asp-controller="Dashboard" asp-action="Index" aria-current="@Current("Dashboard")">ClockInXtra</a>
+
+            @* Links appear only where the permission exists, so the navigation
+               reflects what this administrator can actually do. The authorization
+               policy is still the control — hiding a link is presentation, never
+               protection. *@
+            <nav aria-label="Main">
+                <a asp-controller="Dashboard" asp-action="Index" aria-current="@Current("Dashboard")">Dashboard</a>
+
+                @if (showPeople)
+                {
+                    <p class="nav-group">People</p>
+                    @if (Has(Permissions.MobileUserView))
+                    {
+                        <a asp-controller="Employees" asp-action="Index" aria-current="@Current("Employees")">Employees</a>
+                        <a asp-controller="ReferenceLists" asp-action="Index" aria-current="@Current("ReferenceLists")">Departments &amp; job titles</a>
+                    }
+                    @if (Has(Permissions.DeviceView))
+                    {
+                        <a asp-controller="Devices" asp-action="Pending" aria-current="@Current("Devices")">Devices</a>
+                    }
+                    @if (Has(Permissions.AdministratorView))
+                    {
+                        <a asp-controller="Administrators" asp-action="Index" aria-current="@Current("Administrators")">Administrators</a>
+                    }
+                }
+
+                @if (showAttendance)
+                {
+                    <p class="nav-group">Attendance</p>
+                    @if (Has(Permissions.ReportView))
+                    {
+                        <a asp-controller="Reports" asp-action="Attendance" aria-current="@Current("Reports", "Attendance")">Attendance report</a>
+                        <a asp-controller="Reports" asp-action="Failures" aria-current="@Current("Reports", "Failures")">Validation failures</a>
+                    }
+                    @if (Has(Permissions.AttendanceCorrect) || Has(Permissions.AttendanceApproveCorrection))
+                    {
+                        <a asp-controller="Corrections" asp-action="Index" aria-current="@Current("Corrections")">Corrections</a>
+                    }
+                }
+
+                @if (showSystem)
+                {
+                    <p class="nav-group">System</p>
+                    @if (Has(Permissions.OfficeLocationView))
+                    {
+                        <a asp-controller="Locations" asp-action="Index" aria-current="@Current("Locations")">Office locations</a>
+                    }
+                    @if (Has(Permissions.SettingView))
+                    {
+                        <a asp-controller="Settings" asp-action="Index" aria-current="@Current("Settings")">Settings</a>
+                    }
+                    @if (Has(Permissions.AuditView))
+                    {
+                        <a asp-controller="Reports" asp-action="Audit" aria-current="@Current("Reports", "Audit")">Audit trail</a>
+                    }
+                }
+            </nav>
+
+            <form method="post" asp-controller="Account" asp-action="Logout" class="signout">
+                <span class="who">@User.Identity!.Name</span>
+                <a asp-controller="Account" asp-action="ChangePassword" aria-current="@Current("Account", "ChangePassword")">Change password</a>
+                <button type="submit">Sign out</button>
+            </form>
+        </aside>
+    }
+
+    <div class="page">
+        <main>
+            @RenderBody()
+        </main>
+
+        <footer>
+            <small>Internal use only.</small>
+        </footer>
+    </div>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Attendance.Admin — the administration portal (ASP.NET Core MVC).
+
+    Internal-network only (ASM-01). It shares the Data Protection key ring and
+    application name with the API, because the portal encrypts TOTP secrets
+    that the API must later decrypt (TD-06).
+
+    No OpenAPI packages: this is a server-rendered portal, not an API surface.
+  -->
+
+  <PropertyGroup>
+    <UserSecretsId>clockinxtra-admin</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <!-- Generates the shared secret and encodes it for an authenticator app. -->
+    <PackageReference Include="Otp.NET" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Attendance.Application\Attendance.Application.csproj" />
+    <ProjectReference Include="..\Attendance.Domain\Attendance.Domain.csproj" />
+    <ProjectReference Include="..\Attendance.Infrastructure\Attendance.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

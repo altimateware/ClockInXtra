@@ -1,0 +1,934 @@
+/*==============================================================================
+  ClockInXtra administration portal
+
+  One stylesheet, same-origin, no framework. The content security policy allows
+  styles from this origin only and honours no inline style attribute, so every
+  visual rule lives here. System fonts only: the policy also refuses external
+  font hosts, and an internal tool has no need of them.
+
+  The views use plain semantic markup plus a small vocabulary of classes
+  (.field, .message, .warning, .secret, .table-scroll, .readiness, and the
+  record cards: .employee, .approval, .office, .setting). This file is the
+  whole of that vocabulary.
+==============================================================================*/
+
+/*------------------------------------------------------------------ tokens --*/
+:root {
+  color-scheme: light dark;
+
+  --bg:            #f4f6f8;
+  --surface:       #ffffff;
+  --surface-muted: #eef1f4;
+  --border:        #d5dbe1;
+  --text:          #1d2733;
+  --text-muted:    #5b6876;
+  --accent:        #1f5fa8;
+  --accent-hover:  #174a84;
+  --accent-text:   #ffffff;
+  --nav-bg:     #1d2733;
+  --nav-text:   #e8edf2;
+  --nav-muted:  #a9b6c3;
+
+  --ok-bg:         #e7f4ec;
+  --ok-border:     #9ccdb0;
+  --ok-text:       #1f5b36;
+  --warn-bg:       #fdf1e6;
+  --warn-border:   #e8b07d;
+  --warn-text:     #7a3e0b;
+  --secret-bg:     #fff8db;
+  --secret-border: #e2c65a;
+
+  --focus:         #3b82d6;
+  --radius:        6px;
+  --gap:           1rem;
+  --content-width: 72rem;
+  --sidebar-width: 15rem;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:            #12171d;
+    --surface:       #1a2129;
+    --surface-muted: #222b35;
+    --border:        #334050;
+    --text:          #e3e8ee;
+    --text-muted:    #9aa7b5;
+    --accent:        #5b9be6;
+    --accent-hover:  #7cb0ee;
+    --accent-text:   #0d1520;
+    --nav-bg:     #0c1117;
+    --nav-text:   #e3e8ee;
+    --nav-muted:  #8e9cab;
+
+    --ok-bg:         #15301f;
+    --ok-border:     #2f6b45;
+    --ok-text:       #a6dcb8;
+    --warn-bg:       #3a2412;
+    --warn-border:   #8a5424;
+    --warn-text:     #f2c599;
+    --secret-bg:     #332b0f;
+    --secret-border: #7d6a22;
+
+    --focus:         #7cb0ee;
+  }
+}
+
+/*-------------------------------------------------------------------- base --*/
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 15px;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.5;
+}
+
+/* Signed in: a fixed-width sidebar and a content column beside it. */
+body.with-sidebar {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 0;
+}
+
+main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--content-width);
+  padding: 1.75rem clamp(var(--gap), 3vw, 2.5rem) 3rem;
+}
+
+body.signed-out main {
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 1.25rem;
+  font-size: 1.6rem;
+  line-height: 1.25;
+}
+
+h2 {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.2rem;
+}
+
+h3 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  overflow-wrap: anywhere;
+}
+
+small {
+  color: var(--text-muted);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/*----------------------------------------------------------------- sidebar --*/
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 1.25rem 0.75rem 1rem;
+  overflow-y: auto;
+  background: var(--nav-bg);
+  color: var(--nav-text);
+}
+
+.sidebar .brand {
+  display: block;
+  padding: 0.25rem 0.75rem 1.25rem;
+  color: var(--nav-text);
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+}
+
+.sidebar .nav-group {
+  margin: 1.1rem 0 0.35rem;
+  padding: 0 0.75rem;
+  color: var(--nav-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar nav a {
+  display: block;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius);
+  border-left: 3px solid transparent;
+  color: var(--nav-muted);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.sidebar nav a:hover {
+  color: var(--nav-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar nav a[aria-current="page"] {
+  color: var(--nav-text);
+  background: rgba(255, 255, 255, 0.1);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+.sidebar .signout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 1rem 0 0;
+  padding: 1rem 0.75rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.9rem;
+}
+
+.sidebar .signout .who {
+  color: var(--nav-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sidebar .signout a {
+  color: var(--nav-muted);
+}
+
+.sidebar .signout a[aria-current="page"],
+.sidebar .signout a:hover {
+  color: var(--nav-text);
+}
+
+.sidebar .signout button {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0.35rem 0.85rem;
+  background: transparent;
+  color: var(--nav-text);
+  border: 1px solid var(--nav-muted);
+}
+
+.sidebar .signout button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Narrow screens: the sidebar becomes a bar across the top, its links a
+   wrapping row, so nothing needs script to open or close. */
+@media (max-width: 760px) {
+  body.with-sidebar {
+    display: block;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    padding: 0.75rem var(--gap);
+  }
+
+  .sidebar .brand {
+    padding: 0 0 0.5rem;
+  }
+
+  .sidebar nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .sidebar .nav-group {
+    display: none;
+  }
+
+  .sidebar nav a {
+    padding: 0.3rem 0.6rem;
+    border-left: 0;
+  }
+
+  .sidebar .signout {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    padding: 0.75rem 0 0;
+  }
+
+  .sidebar .signout button {
+    margin: 0;
+  }
+
+  .page {
+    min-height: 0;
+  }
+}
+
+/*------------------------------------------------------------------ footer --*/
+footer {
+  padding: 1rem var(--gap);
+  text-align: center;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+/*------------------------------------------------------------------- forms --*/
+form {
+  margin: 0 0 1.25rem;
+}
+
+label {
+  display: inline-block;
+  margin: 0 0 0.25rem;
+  font-weight: 500;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+select,
+textarea {
+  display: block;
+  width: 100%;
+  max-width: 28rem;
+  padding: 0.45rem 0.6rem;
+  margin: 0 0 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+textarea {
+  max-width: 40rem;
+  min-height: 5rem;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  margin: 0 0.4rem 0 0;
+  accent-color: var(--accent);
+}
+
+/* A checkbox wrapped in its label reads as one control, not a label above a box. */
+label:has(> input[type="checkbox"]),
+label:has(> input[type="radio"]) {
+  display: flex;
+  align-items: center;
+  font-weight: 400;
+  margin: 0 0 0.85rem;
+}
+
+button,
+input[type="submit"] {
+  display: inline-block;
+  padding: 0.5rem 1.1rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button:hover,
+input[type="submit"]:hover {
+  background: var(--accent-hover);
+}
+
+.field {
+  margin: 0 0 0.25rem;
+}
+
+.field label {
+  display: block;
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Filter and search bars. Each control sits in a .filter box with its label
+   above it, and the boxes flow into a grid of equal columns, so a label can
+   never be stranded at the end of one line with its input on the next.
+   Columns are at least 13rem wide and share the rest: seven filters make two
+   tidy rows on a desktop and one column on a phone. */
+form.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.85rem 1rem;
+  align-items: end;
+  padding: 1rem 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+form.filters .filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+form.filters .filter label {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+form.filters .filter input:not([type="checkbox"]),
+form.filters .filter select {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+/* A free-text search box takes two columns where there is room. */
+form.filters .filter-wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 560px) {
+  form.filters .filter-wide {
+    grid-column: auto;
+  }
+}
+
+/* A checkbox filter: its text is the label, on one line, level with the inputs. */
+form.filters .filter-check label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.35rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+form.filters .filter-check input[type="checkbox"] {
+  margin: 0;
+}
+
+form.filters .filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+form.filters .filter-actions a {
+  font-size: 0.92rem;
+}
+
+/*-------------------------------------------------------------- validation --*/
+/* The validation-summary tag helper hides its empty list with an inline
+   style="display:none", which the content security policy (rightly) refuses to
+   honour. Without these rules every form shows an empty bullet point. */
+.validation-summary-valid,
+.field-validation-valid {
+  display: none;
+}
+
+.validation-summary-errors,
+.validation-summary {
+  color: var(--warn-text);
+}
+
+.validation-summary-errors ul {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem 0.75rem 2rem;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+}
+
+.field-validation-error,
+.text-danger {
+  display: block;
+  margin: -0.5rem 0 0.75rem;
+  color: var(--warn-text);
+  font-size: 0.9rem;
+}
+
+.input-validation-error {
+  border-color: var(--warn-border) !important;
+}
+
+/*--------------------------------------------------------------- notices --*/
+.message,
+.warning {
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid;
+}
+
+.message {
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+  color: var(--ok-text);
+}
+
+.warning {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn-text);
+}
+
+/* A secret shown once: set apart so nobody mistakes it for ordinary text, and
+   wrapping so a long setup URI cannot push the page sideways. */
+.secret {
+  padding: 0.6rem 0.8rem;
+  background: var(--secret-bg);
+  border: 1px dashed var(--secret-border);
+  border-radius: var(--radius);
+}
+
+.secret code {
+  background: transparent;
+  padding: 0;
+  font-size: 1rem;
+  user-select: all;
+}
+
+/*------------------------------------------------------------ record cards --*/
+section.employee,
+section.approval,
+section.office,
+section.setting,
+.observed {
+  margin: 0 0 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+section.employee h2,
+section.approval h2,
+section.office h2,
+section.setting h2 {
+  margin-top: 0;
+}
+
+section form {
+  margin-bottom: 0.75rem;
+}
+
+.readiness {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.readiness li {
+  padding: 0.2rem 0.6rem;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.9rem;
+}
+
+/*------------------------------------------------------- definition lists --*/
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 1.25rem;
+}
+
+dt {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+dd {
+  margin: 0;
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  dl {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+
+  dd {
+    margin-bottom: 0.5rem;
+  }
+}
+
+/*------------------------------------------------------------------ tables --*/
+.table-scroll {
+  overflow-x: auto;
+  margin: 0 0 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93rem;
+}
+
+th,
+td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  background: var(--surface-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: var(--surface-muted);
+}
+
+td form {
+  margin: 0;
+}
+
+td button {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.88rem;
+}
+
+/*----------------------------------------------------------------- sign in --*/
+.signin {
+  max-width: 24rem;
+  margin: 3rem auto 0;
+  padding: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.signin h1 {
+  font-size: 1.35rem;
+  margin-bottom: 1.5rem;
+}
+
+.signin input:not([type="hidden"]) {
+  max-width: none;
+}
+
+.signin button {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+}
+
+/*---------------------------------------------------------------- settings --*/
+.setting h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.setting .setting-key {
+  margin: 0.15rem 0 0.6rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.setting .setting-key code {
+  background: transparent;
+  padding: 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.badge-warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn-text);
+}
+
+/* A number or time with its unit written after it: "20 metres". */
+.with-unit {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.35rem;
+}
+
+.with-unit input {
+  width: 12rem !important;
+  margin: 0 !important;
+}
+
+.with-unit .unit {
+  color: var(--text-muted);
+}
+
+.hint {
+  margin: 0.25rem 0 0.85rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+select + .hint,
+input + .hint {
+  margin-top: -0.6rem;
+}
+
+fieldset.choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  border: 0;
+}
+
+fieldset.choice legend {
+  width: 100%;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  font-weight: 500;
+}
+
+fieldset.choice label {
+  margin: 0;
+}
+
+/* Long time zone names need the room. */
+.setting select {
+  max-width: 34rem;
+}
+
+/*--------------------------------------------------------- office locations --*/
+section.office h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* The edit form stays folded until asked for: the page is mostly for reading
+   what is configured, and a wall of open forms hides the figures. */
+details {
+  margin: 0 0 1rem;
+}
+
+details > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 500;
+  margin: 0 0 0.75rem;
+}
+
+details[open] > summary {
+  margin-bottom: 1rem;
+}
+
+fieldset.coordinates {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  border: 0;
+}
+
+fieldset.coordinates legend {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  font-weight: 600;
+}
+
+.coordinate-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+}
+
+.coordinate-pair .hint {
+  margin-top: 0;
+}
+
+.status-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.status-form label {
+  width: 100%;
+  margin: 0;
+}
+
+.status-form input {
+  margin: 0 !important;
+  flex: 1;
+  min-width: 14rem;
+}
+
+.warning-text {
+  color: var(--warn-text);
+}
+
+button.danger {
+  background: transparent;
+  color: var(--warn-text);
+  border-color: var(--warn-border);
+}
+
+button.danger:hover {
+  background: var(--warn-bg);
+}
+
+/*----------------------------------------------------- employees and lists --*/
+/* Two columns of fields where there is room, one on a phone. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0 1.25rem;
+}
+
+.form-grid .field input,
+.form-grid .field select {
+  max-width: none;
+}
+
+.employee-form {
+  max-width: 44rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.employee-form > .field input {
+  max-width: 21rem;
+}
+
+.list-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1rem;
+}
+
+.inline-form {
+  margin-bottom: 1rem;
+}
+
+.inline-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0;
+}
+
+.inline-row input {
+  margin: 0 !important;
+  flex: 1;
+  min-width: 8rem;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--border);
+}
+
+button.secondary:hover {
+  background: var(--surface-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

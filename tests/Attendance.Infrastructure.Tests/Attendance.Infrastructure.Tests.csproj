@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Repository and cryptography tests. The repository tests run against a
+       real SQL Server instance: the stored procedures ARE the contract, so
+       mocking the database here would test nothing worth testing. -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Attendance.Infrastructure\Attendance.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- One definition of the database the suite runs against, and of the
+         waiting limits that keep these tests honest on a loaded machine. -->
+    <Compile Include="..\Shared\TestEnvironment.cs" Link="TestEnvironment.cs" />
+  </ItemGroup>
+
+</Project>

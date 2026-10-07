@@ -1,0 +1,190 @@
+@using Attendance.Application.Abstractions
+@model IReadOnlyList<Attendance.Application.Abstractions.AttendanceReportRow>
+@{
+    ViewData["Title"] = "Attendance";
+    var filter = (AttendanceReportFilter)ViewData["Filter"]!;
+    var offices = (IReadOnlyList<OfficeLocationDetail>)ViewData["Offices"]!;
+    var options = ViewData["FilterOptions"] as ReportFilterOptions ?? ReportFilterOptions.None;
+    int missing = Model.Count(row => row.IsMissingClockOut);
+    bool truncated = Model.Count >= ReportLimits.DailyAttendanceRows;
+    bool canCorrect = User.HasClaim(
+        Attendance.Admin.Security.Permissions.ClaimType,
+        Attendance.Admin.Security.Permissions.AttendanceCorrect);
+}
+
+<h1>Attendance</h1>
+
+<form method="get" asp-action="Attendance" class="filters">
+    <div class="filter">
+        <label for="from">From</label>
+        <input id="from" name="from" type="date" value="@filter.FromDate.ToString("yyyy-MM-dd")" />
+    </div>
+
+    <div class="filter">
+        <label for="to">To</label>
+        <input id="to" name="to" type="date" value="@filter.ToDate.ToString("yyyy-MM-dd")" />
+    </div>
+
+    <div class="filter">
+        <label for="userId">Employee</label>
+        @* A suggestion list, not a closed list: pick from it by name or id, or
+           type — the report matches the user id either way. *@
+        <input id="userId" name="userId" value="@filter.UserId" maxlength="64"
+               list="employee-options" placeholder="Any employee" autocomplete="off" />
+    </div>
+
+    <div class="filter">
+        <label for="department">Department</label>
+        <input id="department" name="department" value="@filter.Department" maxlength="120"
+               list="department-options" placeholder="Any department" autocomplete="off" />
+    </div>
+
+    <div class="filter">
+        <label for="officeLocationId">Office</label>
+        <select id="officeLocationId" name="officeLocationId">
+            <option value="">Any office</option>
+            @foreach (OfficeLocationDetail office in offices)
+            {
+                <option value="@office.OfficeLocationId" selected="@(filter.OfficeLocationId == office.OfficeLocationId)">
+                    @office.Name@(office.IsActive ? "" : " (disabled)")
+                </option>
+            }
+        </select>
+    </div>
+
+    <div class="filter">
+        <label for="status">Status</label>
+        <select id="status" name="status">
+            <option value="">Any status</option>
+            <option value="Open" selected="@(filter.Status == AttendanceRecordStatus.Open)">Open</option>
+            <option value="Closed" selected="@(filter.Status == AttendanceRecordStatus.Closed)">Closed</option>
+            <option value="Corrected" selected="@(filter.Status == AttendanceRecordStatus.Corrected)">Corrected</option>
+        </select>
+    </div>
+
+    <div class="filter">
+        <label for="exception">Exceptions</label>
+        <select id="exception" name="exception">
+            <option value="">All records</option>
+            <option value="MissingClockOut" selected="@(filter.Exception == AttendanceExceptionKind.MissingClockOut)">Missing clock-outs</option>
+            <option value="LateClockIn" selected="@(filter.Exception == AttendanceExceptionKind.LateClockIn)">Late clock-ins</option>
+            <option value="EarlyClockOut" selected="@(filter.Exception == AttendanceExceptionKind.EarlyClockOut)">Early clock-outs</option>
+            <option value="MockedLocation" selected="@(filter.Exception == AttendanceExceptionKind.MockedLocation)">Mocked locations</option>
+        </select>
+    </div>
+
+    <div class="filter-actions">
+        <button type="submit">Show</button>
+        <a asp-action="Attendance">Reset</a>
+    </div>
+
+    <datalist id="employee-options">
+        @foreach (EmployeeOption employee in options.Employees)
+        {
+            <option value="@employee.UserId">@employee.DisplayName</option>
+        }
+    </datalist>
+    <datalist id="department-options">
+        @foreach (string department in options.Departments)
+        {
+            <option value="@department"></option>
+        }
+    </datalist>
+</form>
+
+<p>
+    Dates are attendance days in the configured business time zone. "Late" and
+    "early out" are shown only where those rules are configured; a blank there
+    means the rule was not evaluated, not that the employee was on time.
+</p>
+
+@if (truncated)
+{
+    <p class="warning">
+        Only the first @ReportLimits.DailyAttendanceRows records are shown.
+        Narrow the date range or add a filter to see the rest.
+    </p>
+}
+
+@if (missing > 0 && filter.Exception != AttendanceExceptionKind.MissingClockOut)
+{
+    <p class="warning">
+        @missing record@(missing == 1 ? "" : "s") @(missing == 1 ? "has" : "have") no clock-out
+        from a business day already past. Those employees left without closing their record;
+        only an administrative correction will complete them.
+    </p>
+}
+
+@if (Model.Count == 0)
+{
+    <p>No attendance matches.</p>
+}
+else
+{
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Employee</th>
+                    <th scope="col">Department</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Clock in (UTC)</th>
+                    <th scope="col">Clock out (UTC)</th>
+                    <th scope="col">Duration</th>
+                    <th scope="col">Office</th>
+                    <th scope="col">Distance</th>
+                    <th scope="col">Accuracy</th>
+                    <th scope="col">Flags</th>
+                    @if (canCorrect)
+                    {
+                        <th scope="col">Correction</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (AttendanceReportRow row in Model)
+                {
+                    <tr>
+                        <td>@row.AttendanceDate.ToString("yyyy-MM-dd")</td>
+                        <td>@row.EmployeeName (@row.UserId)</td>
+                        <td>@(row.Department ?? "—")</td>
+                        <td>@row.Status</td>
+                        <td>@(row.ClockInUtc?.ToString("HH:mm") ?? "—")</td>
+                        <td>@(row.ClockOutUtc?.ToString("HH:mm") ?? "—")</td>
+                        <td>@(row.DurationMinutes is { } minutes ? $"{minutes / 60}h {minutes % 60}m" : "—")</td>
+                        <td>@(row.ClockInOfficeName ?? "—")</td>
+                        @* Distance and accuracy are shown side by side because
+                           one without the other says very little: two metres
+                           measured with fifty metres of uncertainty is not the
+                           same evidence as two metres measured with three. *@
+                        <td>@(row.ClockInDistanceMeters?.ToString("0.#") ?? "—") m</td>
+                        <td>@(row.ClockInAccuracyMeters?.ToString("0.#") ?? "—") m</td>
+                        <td>
+                            @if (row.IsMissingClockOut)
+                            {
+                                <span class="warning">no clock-out</span>
+                            }
+                            @if (row.IsLateClockIn == true)
+                            {
+                                <span>late</span>
+                            }
+                            @if (row.IsEarlyClockOut == true)
+                            {
+                                <span>early out</span>
+                            }
+                            @if (row.ClockInWasMockedLocation)
+                            {
+                                <span class="warning">mocked location</span>
+                            }
+                        </td>
+                        @if (canCorrect)
+                        {
+                            <td><a asp-controller="Corrections" asp-action="Request" asp-route-id="@row.AttendancePublicId">Correct…</a></td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

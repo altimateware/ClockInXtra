@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Attendance.Infrastructure — Dapper repositories, cryptography, TOTP,
+    attestation verification and platform services.
+
+    Every database call goes through a stored procedure (Claude.md §4). There
+    is no SQL text in this project beyond procedure names.
+
+    The FrameworkReference gives access to ASP.NET Core Data Protection, which
+    protects TOTP secrets at rest (TD-06), without dragging in the whole web
+    stack as NuGet packages.
+  -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Otp.NET" />
+    <!--
+      No PackageReference for System.Formats.Cbor or System.Formats.Asn1.
+      Both ship in the .NET 10 shared framework, and referencing them as
+      packages is redundant (NU1510). CBOR decodes Apple App Attest
+      attestation objects (OPEN-33); ASN.1 parses Android key attestation
+      certificate extensions.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Attendance.Application\Attendance.Application.csproj" />
+    <ProjectReference Include="..\Attendance.Domain\Attendance.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

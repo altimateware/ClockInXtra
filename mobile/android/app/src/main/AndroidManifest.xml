@@ -1,0 +1,78 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app is useless without the network: attendance state lives on the
+         server and is never decided locally (§11, §52). This belongs in the main
+         manifest, not only the debug one, because the release build calls the
+         same API. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Location is the proximity control of §9. Fine location is what the 5 m
+         radius needs; coarse is declared because Android lets the user grant
+         only that, and the app must be able to tell the difference and say so
+         rather than silently failing the check. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Deliberately NOT declared:
+         ACCESS_BACKGROUND_LOCATION — attendance is recorded while the employee
+           is using the app. Tracking them afterwards would collect data the
+           purpose does not need (§63, data minimisation).
+         READ_PHONE_STATE — modern Android does not expose a stable hardware
+           identifier through it, and device identity here comes from a
+           hardware-backed key, not an identifier the OS hands out (§18, §65). -->
+
+    <application
+        android:usesCleartextTraffic="false"
+        android:label="clockinxtra"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <!-- Root management apps, looked for by IntegrityHandler. Android 11+
+             package visibility hides other apps unless they are named here, and
+             without these entries the check would silently find nothing. -->
+        <package android:name="com.topjohnwu.magisk"/>
+        <package android:name="eu.chainfire.supersu"/>
+        <package android:name="com.noshufou.android.su"/>
+        <package android:name="com.koushikdutta.superuser"/>
+        <package android:name="com.kingroot.kinguser"/>
+        <package android:name="me.phh.superuser"/>
+        <package android:name="com.thirdparty.superuser"/>
+        <package android:name="com.yellowes.su"/>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

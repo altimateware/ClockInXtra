@@ -1,0 +1,169 @@
+@using Attendance.Application.Abstractions
+@model Attendance.Application.Abstractions.ValidationFailureReport
+@{
+    ViewData["Title"] = "Validation failures";
+    var filter = (ValidationFailureFilter)ViewData["Filter"]!;
+
+    static string Describe(ValidationFailureCategory category) => category switch
+    {
+        ValidationFailureCategory.Location => "Location",
+        ValidationFailureCategory.Device => "Device",
+        ValidationFailureCategory.Identity => "Identity",
+        ValidationFailureCategory.Integrity => "Request integrity",
+        _ => category.ToString(),
+    };
+
+    int total = Model.Summary.Sum(row => row.EventCount);
+
+    // The correlation id links to the audit trail only for someone allowed to
+    // open it; for anyone else it is shown as text, to quote to support.
+    bool canOpenAudit = User.HasClaim(
+        Attendance.Admin.Security.Permissions.ClaimType,
+        Attendance.Admin.Security.Permissions.AuditView);
+}
+
+<h1>Validation failures</h1>
+
+<form method="get" asp-action="Failures" class="filters">
+    <div class="filter">
+        <label for="from">From (UTC)</label>
+        <input id="from" name="from" type="datetime-local" value="@filter.FromUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")" />
+    </div>
+
+    <div class="filter">
+        <label for="to">To (UTC)</label>
+        <input id="to" name="to" type="datetime-local" value="@filter.ToUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")" />
+    </div>
+
+    <div class="filter">
+        <label for="category">Category</label>
+        <select id="category" name="category">
+            <option value="">All categories</option>
+            @foreach (ValidationFailureCategory category in Enum.GetValues<ValidationFailureCategory>())
+            {
+                <option value="@category" selected="@(filter.Category == category)">@Describe(category)</option>
+            }
+        </select>
+    </div>
+
+    <div class="filter">
+        <label for="subject">Employee or account</label>
+        <input id="subject" name="subject" value="@filter.SubjectKey" maxlength="128"
+               list="employee-options" placeholder="Anyone" autocomplete="off" />
+    </div>
+
+    <div class="filter-actions">
+        <button type="submit">Show</button>
+        <a asp-action="Failures">Reset</a>
+    </div>
+
+    <datalist id="employee-options">
+        @foreach (EmployeeOption employee in (ViewData["FilterOptions"] as ReportFilterOptions ?? ReportFilterOptions.None).Employees)
+        {
+            <option value="@employee.UserId">@employee.DisplayName</option>
+        }
+    </datalist>
+</form>
+
+<p>
+    Every check the system refused, from the append-only security ledger. A refused
+    clock-in creates no attendance record, so this is the only place it appears.
+    Reasons are the precise internal ones; the mobile app is deliberately told less
+    (for example, a wrong password and a wrong authenticator code look the same to it).
+    Positions are not shown: a list of where employees were when they were refused
+    would be a location history of people who did nothing wrong.
+</p>
+
+<h2>Pattern (@total refusal@(total == 1 ? "" : "s"))</h2>
+
+@if (Model.Summary.Count == 0)
+{
+    <p>Nothing was refused in that window.</p>
+}
+else
+{
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">Category</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Count</th>
+                    <th scope="col">Accounts or devices</th>
+                    <th scope="col">First (UTC)</th>
+                    <th scope="col">Last (UTC)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (ValidationFailureSummary row in Model.Summary)
+                {
+                    <tr>
+                        <td>@Describe(row.Category)</td>
+                        <td><code>@row.ReasonCode</code></td>
+                        <td>@row.EventCount</td>
+                        <td>@row.DistinctSubjects</td>
+                        <td>@row.FirstOccurredUtc.ToString("u")</td>
+                        <td>@row.LastOccurredUtc.ToString("u")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <h2>Refusals, newest first</h2>
+
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">When (UTC)</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Employee</th>
+                    <th scope="col">Subject</th>
+                    <th scope="col">Source</th>
+                    <th scope="col">Correlation id</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (ValidationFailureEntry entry in Model.Failures)
+                {
+                    <tr>
+                        <td>@entry.OccurredUtc.ToString("u")</td>
+                        <td>@Describe(entry.Category)</td>
+                        <td>@entry.EventType</td>
+                        <td><code>@entry.ReasonCode</code></td>
+                        <td>@(entry.EmployeeUserId is null ? "—" : $"{entry.EmployeeName} ({entry.EmployeeUserId})")</td>
+                        <td>@(entry.SubjectKey ?? "—")</td>
+                        <td>@(entry.SourceApplication ?? "—")</td>
+                        <td>
+                            @if (entry.CorrelationId is { } correlationId && canOpenAudit)
+                            {
+                                <a asp-action="Audit" asp-route-correlationId="@correlationId"
+                                   asp-route-from="@entry.OccurredUtc.AddHours(-1).ToString("o")"
+                                   asp-route-to="@entry.OccurredUtc.AddHours(1).ToString("o")">@correlationId</a>
+                            }
+                            else
+                            {
+                                @(entry.CorrelationId?.ToString() ?? "—")
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.HasMore && Model.Failures.Count > 0)
+    {
+        <p>
+            <a asp-action="Failures"
+               asp-route-from="@filter.FromUtc.ToString("o")"
+               asp-route-to="@filter.ToUtc.ToString("o")"
+               asp-route-category="@filter.Category"
+               asp-route-subject="@filter.SubjectKey"
+               asp-route-before="@Model.Failures[^1].SecurityEventId">Older refusals</a>
+        </p>
+    }
+}

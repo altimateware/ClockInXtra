@@ -1,0 +1,100 @@
+@using Attendance.Application.Abstractions
+@using Attendance.Domain.ValueObjects
+@model IReadOnlyList<Attendance.Application.Abstractions.PendingDeviceApproval>
+@{
+    ViewData["Title"] = "Devices awaiting approval";
+}
+
+<h1>Devices awaiting approval</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if (TempData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+@if (Model.Count == 0)
+{
+    <p>No device registrations are waiting.</p>
+}
+else
+{
+    <p>
+        Approving a registration makes it the employee's only working device.
+        Any device they are using now will be revoked in the same action and will
+        stop recording attendance immediately.
+    </p>
+
+    foreach (PendingDeviceApproval device in Model)
+    {
+        <section class="approval">
+            <h2>@device.EmployeeName (@device.UserId)</h2>
+
+            <dl>
+                <dt>Registered</dt>
+                <dd>@device.RegisteredUtc.ToString("u", System.Globalization.CultureInfo.InvariantCulture)</dd>
+
+                <dt>Device</dt>
+                <dd>@(device.DeviceModel ?? "not reported") — @device.Platform, @(device.OsVersion ?? "unknown OS"), app @(device.AppVersion ?? "unknown")</dd>
+
+                <dt>Key attestation</dt>
+                <dd>
+                    @device.AttestationLevel
+                    @if (device.AttestationLevel != AttestationLevel.Hardware)
+                    {
+                        @* Not proof of fraud, but weaker evidence, and the
+                           administrator should weigh it before approving. *@
+                        <strong class="warning">
+                            — the server could not confirm this key is held in device hardware.
+                        </strong>
+                    }
+                </dd>
+
+                @if (device.Department is { Length: > 0 })
+                {
+                    <dt>Department</dt>
+                    <dd>@device.Department</dd>
+                }
+
+                @if (device.CurrentActiveDeviceModel is { Length: > 0 })
+                {
+                    <dt>Will revoke</dt>
+                    <dd class="warning">
+                        @device.CurrentActiveDeviceModel
+                        @if (device.CurrentActiveDeviceLastSeenUtc is { } lastSeen)
+                        {
+                            <text>, last used @lastSeen.ToString("u", System.Globalization.CultureInfo.InvariantCulture)</text>
+                        }
+                    </dd>
+                }
+
+                @if (device.RecentFailedAttempts > 0)
+                {
+                    <dt>Recent failed sign-ins</dt>
+                    <dd class="warning">
+                        @device.RecentFailedAttempts against this account.
+                        A registration that follows failed attempts is what a stolen
+                        password looks like. Confirm with the employee directly before approving.
+                    </dd>
+                }
+            </dl>
+
+            <form method="post" asp-action="Approve">
+                <input type="hidden" name="deviceId" value="@device.DeviceId" />
+                <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(device.RowVersion)" />
+                <button type="submit">Approve this device</button>
+            </form>
+
+            <form method="post" asp-action="Revoke">
+                <input type="hidden" name="deviceId" value="@device.DeviceId" />
+                <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(device.RowVersion)" />
+                <label for="reason-@device.DeviceId">Reason for refusal</label>
+                <input id="reason-@device.DeviceId" name="reason" maxlength="256" />
+                <button type="submit">Refuse and revoke</button>
+            </form>
+        </section>
+    }
+}

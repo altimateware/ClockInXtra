@@ -1,0 +1,57 @@
+@using Attendance.Application.Abstractions
+@model Attendance.Application.Abstractions.AttendanceForCorrection
+@{
+    ViewData["Title"] = "Request a correction";
+}
+
+<h1>Request a correction</h1>
+
+@if (ViewData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+<dl>
+    <dt>Employee</dt>
+    <dd>@Model.EmployeeName (@Model.UserId)</dd>
+    <dt>Attendance date</dt>
+    <dd>@Model.AttendanceDate.ToString("dddd d MMMM yyyy")</dd>
+    <dt>Clock in</dt>
+    <dd>@Model.ClockInLocal.ToString("HH:mm")</dd>
+    <dt>Clock out</dt>
+    <dd>@(Model.ClockOutLocal?.ToString("HH:mm") ?? "none — the day was not closed")</dd>
+</dl>
+
+@if (Model.HasPendingCorrection)
+{
+    <p class="warning">
+        A correction to this record is already awaiting approval. It must be approved or
+        rejected before another can be requested.
+    </p>
+    <p><a asp-action="Index">Back to corrections</a></p>
+}
+else
+{
+    <form method="post" asp-action="Request" asp-route-id="@Model.AttendancePublicId">
+        <p>
+            Enter only what should change, as business-local times on @Model.AttendanceDate.ToString("d MMMM").
+            A correction cannot move the record to another day, or record a time that has not happened yet.
+        </p>
+
+        <label for="clockIn">Corrected clock-in</label>
+        <input id="clockIn" name="clockIn" type="time" />
+
+        <label for="clockOut">Corrected clock-out</label>
+        <input id="clockOut" name="clockOut" type="time" />
+
+        <label for="reason">Reason</label>
+        <textarea id="reason" name="reason" maxlength="512" rows="3" required></textarea>
+
+        <button type="submit">Request correction</button>
+    </form>
+
+    <p>
+        The record does not change until another administrator approves the correction.
+        The original times are kept with it permanently.
+    </p>
+}

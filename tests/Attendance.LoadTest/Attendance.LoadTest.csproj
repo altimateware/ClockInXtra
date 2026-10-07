@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A capacity harness, not a test: it answers "how many employees can clock
+       in per second, and what limits it" against a real API and a real
+       database. It is never part of the test run (see scripts/run-tests.ps1),
+       because it is slow, it writes a lot of rows, and its result is a
+       measurement rather than a pass or a fail. -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Attendance.LoadTest</RootNamespace>
+    <StartupObject>Attendance.LoadTest.Runner</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Otp.NET" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Attendance.Api\Attendance.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The same signer the API tests use: one implementation of the signing
+         profile, so a load run cannot pass with a signature the tests would
+         reject. -->
+    <Compile Include="..\Attendance.Api.Tests\SigningHttpClient.cs" Link="SigningHttpClient.cs" />
+  </ItemGroup>
+
+</Project>

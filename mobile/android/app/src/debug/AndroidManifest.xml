@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The INTERNET permission is required for development. Specifically,
+         the Flutter tool needs it to communicate with the running application
+         to allow setting breakpoints, to provide hot reload, etc.
+
+         It is also declared in the main manifest, because the released app
+         calls the attendance API. Declaring it twice is harmless — the merger
+         collapses them — and removing it here would be a trap for anyone who
+         later changed the main one.
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Applies the debug-only network rules. See res/xml/network_security_config.xml
+         for what they relax and why each relaxation is narrow. This attribute is
+         merged onto the application element declared in the main manifest; the
+         release build has no such attribute and keeps
+         android:usesCleartextTraffic="false". -->
+    <application
+        android:networkSecurityConfig="@xml/network_security_config"/>
+</manifest>

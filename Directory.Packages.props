@@ -1,0 +1,106 @@
+<Project>
+
+  <!--
+    ClockInXtra — central package management.
+
+    Every version is declared once, here. Project files reference packages by
+    name only, so two projects cannot silently drift onto different versions of
+    a security-relevant library.
+
+    Versions were verified on nuget.org on 2026-09-11/12 (Claude.md §64: do not
+    assume a package or version exists).
+  -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+
+    <!--
+      Transitive pinning is a security control here, not a convenience.
+      It lets a PackageVersion below apply to a package that arrives only as
+      somebody else's dependency — which is exactly how the first real
+      vulnerability in this solution appeared (see Microsoft.OpenApi).
+    -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="Data access">
+    <!-- Dapper + stored procedures only. No EF Core anywhere (Claude.md §4). -->
+    <PackageVersion Include="Dapper" Version="2.1.79" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.3" />
+  </ItemGroup>
+
+  <ItemGroup Label="Application">
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+    <!-- FluentValidation.AspNetCore is deprecated by its author; validators are
+         invoked explicitly instead. -->
+  </ItemGroup>
+
+  <ItemGroup Label="Security">
+    <!-- RFC 6238 TOTP. VerifyTotp reports the matched time step, which the
+         replay protection in core.usp_MfaCredential_TryConsumeTimeStep needs. -->
+    <PackageVersion Include="Otp.NET" Version="1.4.1" />
+    <!--
+      Attestation parsing needs no packages on .NET 10: System.Formats.Cbor
+      (Apple App Attest attestation objects) and System.Formats.Asn1 (Android
+      key attestation certificate extensions) both ship in the shared
+      framework. Referencing them explicitly is redundant and the build
+      rejects it (NU1510).
+    -->
+  </ItemGroup>
+
+  <ItemGroup Label="API">
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+
+    <!--
+      SECURITY PIN — CVE-2026-49451 (high, CVSS 7.5).
+
+      Microsoft.AspNetCore.OpenApi 10.0.8 pulls in Microsoft.OpenApi 2.0.0,
+      which is vulnerable to a denial of service: a malformed document with
+      circular schema references causes uncontrolled recursion and a stack
+      overflow that terminates the process.
+
+      The advisory names 2.7.5 as the patched release, but nuget.org marks
+      2.7.5 itself as carrying a high-severity vulnerability, so it is not a
+      safe target. 2.12.2 is the current 2.x release. The 3.x line is not used:
+      ASP.NET Core 10 is built against the 2.x API surface.
+
+      This is a transitive package. It has no PackageReference anywhere in the
+      solution and is overridden purely by transitive pinning above.
+      Re-check this pin whenever Microsoft.AspNetCore.OpenApi is upgraded.
+    -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
+
+    <PackageVersion Include="Asp.Versioning.Mvc" Version="10.2.1" />
+    <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
+    <!-- Swagger UI assets only; the OpenAPI document itself is produced by
+         Microsoft.AspNetCore.OpenApi. Enabled outside Production only. -->
+    <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.2.3" />
+  </ItemGroup>
+
+  <ItemGroup Label="Logging">
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <!--
+      xunit.v3 is a Microsoft.Testing.Platform (MTP) test application: each test
+      project builds as an executable that hosts its own tests.
+
+      Deliberately absent: Microsoft.NET.Test.Sdk (the VSTest host),
+      xunit.runner.visualstudio (the VSTest adapter) and coverlet.collector (a
+      VSTest data collector). The .NET 10 SDK's 'dotnet test' runs MTP
+      applications directly — the mode is selected in global.json — and mixing
+      the VSTest packages in makes the build try the legacy path, which .NET 10
+      no longer supports.
+
+      Code coverage under MTP comes from Microsoft.Testing.Extensions.CodeCoverage,
+      added when coverage reporting is introduced in the CI phase.
+    -->
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+
+    <!-- Hosts the API in-process so requests travel the real middleware
+         pipeline. The version tracks the ASP.NET Core shared framework. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,151 @@
+@using Attendance.Application.Abstractions
+@model Attendance.Application.Abstractions.AuditSearchResult
+@{
+    ViewData["Title"] = "Audit";
+    var from = (DateTimeOffset)ViewData["From"]!;
+    var to = (DateTimeOffset)ViewData["To"]!;
+}
+
+<h1>Audit</h1>
+
+<form method="get" asp-action="Audit" class="filters">
+    <div class="filter">
+        <label for="from">From (UTC)</label>
+        <input id="from" name="from" type="datetime-local" value="@from.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")" />
+    </div>
+
+    <div class="filter">
+        <label for="to">To (UTC)</label>
+        <input id="to" name="to" type="datetime-local" value="@to.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")" />
+    </div>
+
+    <div class="filter">
+        <label for="eventType">Event type</label>
+        @* Every event type the ledger has recorded, offered as a list. *@
+        <select id="eventType" name="eventType">
+            <option value="">Any event</option>
+            @foreach (string eventType in (ViewData["FilterOptions"] as ReportFilterOptions ?? ReportFilterOptions.None).EventTypes)
+            {
+                <option value="@eventType" selected="@(eventType == ViewData["EventType"] as string)">@eventType</option>
+            }
+        </select>
+    </div>
+
+    <div class="filter">
+        <label for="correlationId">Correlation id</label>
+        @* Pasted from an error message or a log line; checked for shape here
+           so a typo is caught before an empty result is mistaken for "none". *@
+        <input id="correlationId" name="correlationId" value="@ViewData["CorrelationId"]" maxlength="36"
+               pattern="[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+               placeholder="e.g. 3f2c…-…" autocomplete="off" spellcheck="false" />
+    </div>
+
+    <div class="filter-actions">
+        <button type="submit">Search</button>
+        <a asp-action="Audit">Reset</a>
+    </div>
+</form>
+
+<p>
+    Both trails are append-only ledger tables. Rows cannot be altered or removed
+    afterwards — including by a database administrator — which is the property
+    that makes them worth keeping. The commit time and principal below come from
+    SQL Server's own ledger, not from the application, so they cannot be
+    back-dated by whoever wrote the entry.
+</p>
+
+<h2>Actions (@Model.AuditEntries.Count)</h2>
+
+@if (Model.AuditEntries.Count == 0)
+{
+    <p>Nothing in that window.</p>
+}
+else
+{
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">When (UTC)</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Actor</th>
+                    <th scope="col">Subject</th>
+                    <th scope="col">Result</th>
+                    <th scope="col">Source</th>
+                    <th scope="col">Ledger commit</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (AuditEntry entry in Model.AuditEntries)
+                {
+                    <tr>
+                        <td>@entry.OccurredUtc.ToString("u")</td>
+                        <td>@entry.EventType</td>
+                        <td>@(entry.ActorDisplay ?? "—")</td>
+                        <td>@(entry.SubjectType ?? "—") @(entry.SubjectId ?? string.Empty)</td>
+                        <td>@(entry.Succeeded ? "ok" : entry.ReasonCode ?? "failed")</td>
+                        <td>@(entry.SourceApplication ?? "—")</td>
+                        <td>
+                            @(entry.LedgerCommitTime?.ToString("u") ?? "—")
+                            @if (entry.LedgerPrincipalName is { Length: > 0 } principal)
+                            {
+                                <text>by @principal</text>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<h2>Security events (@Model.SecurityEvents.Count)</h2>
+
+<p>
+    This is where the precise reason lives. The mobile API answers wrong user,
+    wrong password and wrong code identically, so that an internet-facing endpoint
+    cannot confirm to an attacker that a password was correct — the distinction
+    survives here and nowhere else.
+</p>
+
+@if (Model.SecurityEvents.Count == 0)
+{
+    <p>Nothing in that window.</p>
+}
+else
+{
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">When (UTC)</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">Subject</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (SecurityEventEntry entry in Model.SecurityEvents)
+                {
+                    <tr>
+                        <td>@entry.OccurredUtc.ToString("u")</td>
+                        <td>@entry.EventType</td>
+                        <td>
+                            @(entry.Severity switch
+                            {
+                                3 => "critical",
+                                2 => "warning",
+                                _ => "information",
+                            })
+                        </td>
+                        <td>@(entry.SubjectKey ?? "—")</td>
+                        <td>@entry.ReasonCode</td>
+                        <td>@(entry.SourceApplication ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

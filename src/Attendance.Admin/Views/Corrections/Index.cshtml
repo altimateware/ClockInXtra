@@ -1,0 +1,133 @@
+@using Attendance.Application.Abstractions
+@model IReadOnlyList<Attendance.Application.Abstractions.AttendanceCorrectionSummary>
+@{
+    ViewData["Title"] = "Corrections";
+    bool canApprove = ViewData["CanApprove"] is true;
+    int me = (int)ViewData["AdministratorId"]!;
+    var status = ViewData["Status"] as AttendanceCorrectionStatus?;
+
+    static string Show(DateTime? value) => value?.ToString("HH:mm") ?? "—";
+
+    static string Describe(AttendanceCorrectionStatus s) => s switch
+    {
+        AttendanceCorrectionStatus.Requested => "Awaiting approval",
+        AttendanceCorrectionStatus.Approved => "Approved",
+        AttendanceCorrectionStatus.Rejected => "Rejected",
+        AttendanceCorrectionStatus.Applied => "Applied",
+        _ => s.ToString(),
+    };
+}
+
+<h1>Attendance corrections</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if (TempData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+<p>
+    A correction changes the clock-in or clock-out time of one attendance record — usually to
+    close a day the employee left without clocking out. Another administrator must approve it
+    before the record changes, and the original times are kept with it permanently.
+    To request one, open the record from the <a asp-controller="Reports" asp-action="Attendance">attendance report</a>.
+    Times are business-local.
+</p>
+
+<form method="get" asp-action="Index" class="filters">
+    <div class="filter">
+        <label for="status">Show</label>
+        <select id="status" name="status">
+            <option value="">All corrections</option>
+            @foreach (AttendanceCorrectionStatus option in Enum.GetValues<AttendanceCorrectionStatus>())
+            {
+                <option value="@option" selected="@(status == option)">@Describe(option)</option>
+            }
+        </select>
+    </div>
+    <div class="filter-actions">
+        <button type="submit">Show</button>
+    </div>
+</form>
+
+@if (Model.Count == 0)
+{
+    <p>No corrections.</p>
+}
+else
+{
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Employee</th>
+                    <th scope="col">Clock in</th>
+                    <th scope="col">Clock out</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Requested by</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Decision</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (AttendanceCorrectionSummary correction in Model)
+                {
+                    <tr>
+                        <td>@correction.AttendanceDate.ToString("yyyy-MM-dd")</td>
+                        <td>@correction.EmployeeName (@correction.UserId)</td>
+                        <td>
+                            @if (correction.CorrectedClockInLocal is not null)
+                            {
+                                <span>@Show(correction.OriginalClockInLocal) → <strong>@Show(correction.CorrectedClockInLocal)</strong></span>
+                            }
+                            else
+                            {
+                                @Show(correction.OriginalClockInLocal)
+                            }
+                        </td>
+                        <td>
+                            @if (correction.CorrectedClockOutLocal is not null)
+                            {
+                                <span>@Show(correction.OriginalClockOutLocal) → <strong>@Show(correction.CorrectedClockOutLocal)</strong></span>
+                            }
+                            else
+                            {
+                                @Show(correction.OriginalClockOutLocal)
+                            }
+                        </td>
+                        <td>@correction.Reason</td>
+                        <td>@correction.RequestedByName, @correction.RequestedUtc.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                        <td>@Describe(correction.Status)</td>
+                        <td>
+                            @if (correction.Status == AttendanceCorrectionStatus.Requested && canApprove
+                                 && correction.RequestedByAdministratorId != me)
+                            {
+                                <form method="post" asp-action="Decide">
+                                    <input type="hidden" name="id" value="@correction.AttendanceCorrectionId" />
+                                    <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(correction.RowVersion)" />
+                                    <label for="note-@correction.AttendanceCorrectionId">Note</label>
+                                    <input id="note-@correction.AttendanceCorrectionId" name="note" maxlength="512" />
+                                    <button type="submit" name="approve" value="true">Approve</button>
+                                    <button type="submit" name="approve" value="false">Reject</button>
+                                </form>
+                            }
+                            else if (correction.Status == AttendanceCorrectionStatus.Requested
+                                     && correction.RequestedByAdministratorId == me)
+                            {
+                                <small>Awaiting another administrator.</small>
+                            }
+                            else if (correction.DecidedByName is not null)
+                            {
+                                <small>@correction.DecidedByName@(correction.DecisionNote is { Length: > 0 } note ? ": " + note : "")</small>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

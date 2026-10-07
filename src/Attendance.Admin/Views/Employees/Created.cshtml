@@ -1,0 +1,62 @@
+@model Attendance.Admin.Controllers.CreatedEmployeeViewModel
+@{
+    ViewData["Title"] = "Employee created";
+}
+
+<h1>Created @Model.FullName</h1>
+
+<div class="warning">
+    <p>
+        <strong>This password is shown once.</strong> Only its hash was stored, so
+        there is no way to display it again. If it is lost before it reaches
+        @Model.FullName, issue a new one rather than looking for this page.
+    </p>
+    <p>
+        Hand it over in person. Do not send it by email or message, and do not
+        write it in a ticket.
+    </p>
+</div>
+
+<h2>Sign-in details</h2>
+
+<dl>
+    <dt>User identifier</dt>
+    <dd><code>@Model.UserId</code></dd>
+
+    <dt>Initial password</dt>
+    <dd class="secret"><code>@Model.InitialPassword</code></dd>
+</dl>
+
+<p>
+    The hyphens are part of the password. They are there to make it readable when
+    copied off a screen, and characters that look alike in handwriting &mdash;
+    <code>0</code> and <code>O</code>, <code>1</code> and <code>l</code> &mdash;
+    have been left out for the same reason.
+</p>
+
+<h2>@Model.FullName cannot clock in yet</h2>
+
+<p>
+    Two things are still outstanding, and until both are done they will be
+    refused at the door:
+</p>
+
+<ol>
+    <li>
+        An authenticator has to be enrolled and proven. Do it now, while they are
+        with you &mdash; it needs their phone.
+    </li>
+    <li>
+        Their device has to register from the app and be approved under
+        <a asp-controller="Devices" asp-action="Pending">Devices</a>.
+    </li>
+</ol>
+
+<form method="post" asp-action="Enrol">
+    <input type="hidden" name="mobileUserId" value="@Model.MobileUserId" />
+    <input type="hidden" name="userId" value="@Model.UserId" />
+    <input type="hidden" name="replaceExisting" value="false" />
+    <button type="submit">Enrol an authenticator</button>
+</form>
+
+<p><a asp-action="Index">Back to employees</a></p>

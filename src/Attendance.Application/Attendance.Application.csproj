@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Attendance.Application — use cases, DTOs, abstractions and validators.
+
+    Depends on the domain only. Everything it needs from the outside world
+    (database, clock, cryptography, TOTP) is expressed as an interface here and
+    implemented in Attendance.Infrastructure, so the dependency arrow keeps
+    pointing inward.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Attendance.Domain\Attendance.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

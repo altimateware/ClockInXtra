@@ -1,0 +1,92 @@
+@model Attendance.Admin.Models.EmployeeFields
+@using Attendance.Admin.Models
+@{
+    IReadOnlyList<string> departments = EmployeeFields.WithKept(Model.Departments, Model.KeepDepartment);
+    IReadOnlyList<string> jobTitles = EmployeeFields.WithKept(Model.JobTitles, Model.KeepJobTitle);
+}
+
+@* Every field is required (DEC-11). The browser checks presence and shape;
+   the database checks them all again, and that the department and job title
+   are active entries of their lists. *@
+
+<div class="form-grid">
+    <div class="field">
+        <label for="firstName">First name</label>
+        <input id="firstName" name="FirstName" value="@Model.FirstName" maxlength="80" required autocomplete="off" />
+    </div>
+
+    <div class="field">
+        <label for="lastName">Last name</label>
+        <input id="lastName" name="LastName" value="@Model.LastName" maxlength="80" required autocomplete="off" />
+    </div>
+
+    <div class="field">
+        <label for="employeeNumber">Employee number</label>
+        <input id="employeeNumber" name="EmployeeNumber" value="@Model.EmployeeNumber" maxlength="32" required autocomplete="off" />
+    </div>
+
+    <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="Email" type="email" value="@Model.Email" maxlength="256" required autocomplete="off"
+               placeholder="name@example.com" />
+    </div>
+
+    <div class="field">
+        <label for="phoneNumber">Phone</label>
+        <input id="phoneNumber" name="PhoneNumber" type="tel" inputmode="tel" value="@Model.PhoneNumber"
+               maxlength="32" required pattern="\+?[0-9 \(\)\-]{7,32}" autocomplete="off"
+               placeholder="e.g. +234 803 123 4567" />
+    </div>
+
+    <div class="field">
+        <label for="department">Department</label>
+        <select id="department" name="Department" required>
+            <option value="" selected="@string.IsNullOrWhiteSpace(Model.Department)" disabled>Choose a department…</option>
+            @foreach (string department in departments)
+            {
+                <option value="@department" selected="@(department == Model.Department)">
+                    @department@(department == Model.KeepDepartment && !Model.Departments.Contains(department) ? " (no longer offered)" : "")
+                </option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="jobTitle">Job title</label>
+        <select id="jobTitle" name="JobTitle" required>
+            <option value="" selected="@string.IsNullOrWhiteSpace(Model.JobTitle)" disabled>Choose a job title…</option>
+            @foreach (string jobTitle in jobTitles)
+            {
+                <option value="@jobTitle" selected="@(jobTitle == Model.JobTitle)">
+                    @jobTitle@(jobTitle == Model.KeepJobTitle && !Model.JobTitles.Contains(jobTitle) ? " (no longer offered)" : "")
+                </option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (Model.Departments.Count == 0 || Model.JobTitles.Count == 0)
+{
+    <p class="warning">
+        @(Model.Departments.Count == 0 && Model.JobTitles.Count == 0
+            ? "There are no departments or job titles to choose from yet."
+            : Model.Departments.Count == 0
+                ? "There are no departments to choose from yet."
+                : "There are no job titles to choose from yet.")
+        @if (Model.CanManageLists)
+        {
+            <a asp-controller="ReferenceLists" asp-action="Index">Add them first.</a>
+        }
+        else
+        {
+            <text>Someone who manages employees must add them first.</text>
+        }
+    </p>
+}
+else if (Model.CanManageLists)
+{
+    <p class="hint">
+        Department or job title missing from the list?
+        <a asp-controller="ReferenceLists" asp-action="Index">Manage departments and job titles</a>.
+    </p>
+}

@@ -1,0 +1,60 @@
+<Project>
+
+  <!--
+    ClockInXtra — shared build settings for every project in the solution.
+
+    Claude.md §59 requires nullable reference types, no hidden global state and
+    no swallowed exceptions. Several of those are enforced here by the compiler
+    rather than left to review.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Warnings are errors. In a system where a missed null check or an unawaited
+      task can mean an attendance record that quietly never gets written, a
+      warning that nobody reads is worse than no warning at all.
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Supply-chain checks run on every restore, not only in CI (threat TH-33).
+      'all' includes transitive dependencies, which is where the first real
+      finding in this solution came from: Microsoft.OpenApi arrived through
+      Microsoft.AspNetCore.OpenApi carrying CVE-2026-49451.
+
+      NuGetAuditLevel is 'low' deliberately: this codebase handles credentials
+      and attendance integrity, so a moderate-severity dependency issue is
+      worth a build failure rather than a line in a log nobody reads.
+    -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Reproducible builds: the binary that was tested is the binary shipped. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>ClockInXtra</Product>
+    <Company>ClockInXtra</Company>
+    <NeutralLanguage>en</NeutralLanguage>
+  </PropertyGroup>
+
+</Project>

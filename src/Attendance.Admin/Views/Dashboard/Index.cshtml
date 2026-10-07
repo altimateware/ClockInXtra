@@ -1,0 +1,32 @@
+@model Attendance.Admin.Controllers.DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<h1>Welcome, @Model.DisplayName</h1>
+
+@* No "must change your password" banner: MustChangePasswordFilter sends such an
+   administrator to the change page before this view can render. *@
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+
+<h2>Your permissions</h2>
+
+@if (Model.Permissions.Count == 0)
+{
+    <p>
+        Your account holds no permissions. Until a super administrator assigns a
+        role, every page will refuse you.
+    </p>
+}
+else
+{
+    <ul>
+        @foreach (string permission in Model.Permissions)
+        {
+            <li>@permission</li>
+        }
+    </ul>
+}

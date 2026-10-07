@@ -1,0 +1,36 @@
+@model Attendance.Admin.Controllers.LoginViewModel
+@{
+    ViewData["Title"] = "Sign in";
+    Layout = "_Layout";
+}
+
+<div class="signin">
+    <h1>ClockInXtra administration</h1>
+
+    <form method="post" asp-action="Login" autocomplete="off">
+        <input type="hidden" asp-for="ReturnUrl" />
+
+        <div asp-validation-summary="All" class="validation-summary"></div>
+
+        <div class="field">
+            <label asp-for="UserName"></label>
+            <input asp-for="UserName" autocomplete="username" autofocus />
+        </div>
+
+        <div class="field">
+            @* The password is never echoed back into the form, even on a failed
+               attempt: a value in a rendered page is a value in the browser's
+               history and in any proxy cache along the way (§24). *@
+            <label asp-for="Password"></label>
+            <input asp-for="Password" type="password" value="" autocomplete="current-password" />
+        </div>
+
+        <div class="field">
+            <label asp-for="AuthenticatorCode"></label>
+            <input asp-for="AuthenticatorCode" inputmode="numeric" autocomplete="one-time-code"
+                   maxlength="6" value="" />
+        </div>
+
+        <button type="submit">Sign in</button>
+    </form>
+</div>

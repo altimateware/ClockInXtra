@@ -1,0 +1,170 @@
+@using Attendance.Admin.Controllers
+@using Attendance.Admin.Models
+@using Attendance.Application.Abstractions
+@model IReadOnlyList<Attendance.Application.Abstractions.MobileUserSummary>
+@{
+    ViewData["Title"] = "Employees";
+    bool onlyNotReady = ViewData["OnlyNotReady"] is true;
+    CreateEmployeeInput? draft = ViewData["Draft"] as CreateEmployeeInput;
+    bool canManage = User.HasClaim(
+        Attendance.Admin.Security.Permissions.ClaimType,
+        Attendance.Admin.Security.Permissions.MobileUserManage);
+}
+
+<h1>Employees</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if ((TempData["Error"] ?? ViewData["Error"]) is string error)
+{
+    <p class="warning">@error</p>
+}
+
+<form method="get" asp-action="Index" class="filters">
+    <div class="filter filter-wide">
+        <label for="search">Search</label>
+        <input id="search" name="search" type="search" value="@ViewData["Search"]" maxlength="128"
+               placeholder="Name, user id or employee number" />
+    </div>
+    <div class="filter filter-check">
+        <label>
+            <input type="checkbox" name="onlyNotReady" value="true" checked="@onlyNotReady" />
+            Only those who cannot clock in
+        </label>
+    </div>
+    <div class="filter-actions">
+        <button type="submit">Search</button>
+    </div>
+</form>
+
+@if (Model.Count == 0)
+{
+    @* Worded so it stays true when there are no employees at all. "Everyone has
+       what they need" reads as reassurance on an empty system, which is the one
+       moment it means the opposite. *@
+    <p>
+        @(onlyNotReady
+            ? "Nobody is waiting on a password, an authenticator or a device."
+            : "No employees matched.")
+    </p>
+}
+else
+{
+    @foreach (MobileUserSummary employee in Model)
+    {
+        <section class="employee">
+            <h2>@employee.FullName (@employee.UserId)</h2>
+
+            @if (!employee.IsActive)
+            {
+                <p class="warning">This account is not active.</p>
+            }
+
+            <ul class="readiness">
+                @* All three are required. Naming the missing one saves an
+                   administrator guessing why somebody was refused at a door. *@
+                <li>Password: @(employee.HasCredential ? "set" : "NOT SET")</li>
+                <li>Authenticator: @(employee.HasActiveMfa ? "active" : "NOT ACTIVE")</li>
+                <li>
+                    Device:
+                    @if (employee.HasActiveDevice)
+                    {
+                        <text>approved</text>
+                    }
+                    else if (employee.HasDeviceAwaitingApproval)
+                    {
+                        <text>awaiting approval</text>
+                    }
+                    else
+                    {
+                        <text>NONE REGISTERED</text>
+                    }
+                </li>
+            </ul>
+
+            @if (!employee.CanClockIn)
+            {
+                <p class="warning">This employee cannot clock in.</p>
+            }
+
+            @if (employee.MissingDetails.Count > 0)
+            {
+                @* Every field is required (DEC-11); records made before that
+                   may lack some, and this is where they are completed. *@
+                <p class="warning">Details missing: @string.Join(", ", employee.MissingDetails).</p>
+            }
+
+            <p><a asp-action="Edit" asp-route-id="@employee.MobileUserId">Edit details</a></p>
+
+            @if (!employee.HasActiveMfa)
+            {
+                <form method="post" asp-action="Enrol">
+                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
+                    <input type="hidden" name="userId" value="@employee.UserId" />
+                    <label>
+                        <input type="checkbox" name="replaceExisting" value="true" />
+                        Replace an existing authenticator
+                    </label>
+                    <button type="submit">Enrol an authenticator</button>
+                </form>
+
+                <form method="post" asp-action="Activate">
+                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
+                    <label for="code-@employee.MobileUserId">Activation code</label>
+                    <input id="code-@employee.MobileUserId" name="code" inputmode="numeric"
+                           maxlength="6" autocomplete="off" />
+                    <button type="submit">Activate</button>
+                </form>
+            }
+            else
+            {
+                <form method="post" asp-action="RevokeMfa">
+                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
+                    <label for="reason-@employee.MobileUserId">Reason</label>
+                    <input id="reason-@employee.MobileUserId" name="reason" maxlength="256" />
+                    <button type="submit">Revoke authenticator</button>
+                </form>
+            }
+        </section>
+    }
+}
+
+<h2>Add an employee</h2>
+
+<p>
+    A password is generated and shown once on the next page. It is not chosen
+    here, and it cannot be looked up afterwards.
+</p>
+
+@if (canManage)
+{
+    <form method="post" asp-action="Create" class="employee-form">
+        <div class="field">
+            <label for="userId">User identifier</label>
+            <input id="userId" name="UserId" value="@draft?.UserId" maxlength="64" required autocomplete="off" />
+            <p class="hint">What the employee signs in with. It cannot be changed afterwards.</p>
+        </div>
+
+        @await Html.PartialAsync("_EmployeeFields", new EmployeeFields
+        {
+            EmployeeNumber = draft?.EmployeeNumber,
+            FirstName = draft?.FirstName,
+            LastName = draft?.LastName,
+            Email = draft?.Email,
+            PhoneNumber = draft?.PhoneNumber,
+            Department = draft?.Department,
+            JobTitle = draft?.JobTitle,
+            Departments = ViewData["Departments"] as IReadOnlyList<string> ?? [],
+            JobTitles = ViewData["JobTitles"] as IReadOnlyList<string> ?? [],
+            CanManageLists = canManage,
+        })
+
+        <button type="submit">Create employee</button>
+    </form>
+}
+else
+{
+    <p>Adding employees needs the permission to manage them.</p>
+}

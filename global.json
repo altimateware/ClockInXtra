@@ -1,0 +1,22 @@
+{
+  "//": [
+    "ClockInXtra toolchain configuration.",
+    "",
+    "sdk: pins the major .NET version so every machine and build agent compiles",
+    "against .NET 10 (LTS, supported to 2028-11-14). rollForward latestFeature",
+    "allows newer 10.x SDKs without silently moving to .NET 11.",
+    "",
+    "test.runner: opts into the Microsoft.Testing.Platform mode of 'dotnet test',",
+    "introduced in the .NET 10 SDK. xunit.v3 is an MTP test application, and the",
+    ".NET 10 SDK no longer supports running MTP through the legacy VSTest path.",
+    "Without this, 'dotnet test' fails before a single test runs."
+  ],
+  "sdk": {
+    "version": "10.0.300",
+    "rollForward": "latestFeature",
+    "allowPrerelease": false
+  },
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  }
+}

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only. This file lives under src/debug, so it is not compiled
+    into a release APK at all — the relaxations below cannot reach production
+    even by mistake, which is the reason for putting it here rather than
+    switching it on with a flag (§39).
+
+    Two relaxations, each narrow:
+
+    1. Cleartext to the development hosts only. 10.0.2.2 is how the Android
+       emulator reaches the host machine's loopback; localhost and 127.0.0.1
+       cover a device attached over `adb reverse`. The base configuration stays
+       cleartextTrafficPermitted="false", so every other host — including any
+       real server someone points a debug build at — still requires TLS.
+
+    2. User-installed certificate authorities are trusted under
+       <debug-overrides>, which Android applies only when the manifest marks the
+       application debuggable. This is what lets a developer run the API behind a
+       self-signed or internal-PKI certificate without disabling certificate
+       validation in code. Disabling validation in the HTTP client would be the
+       tempting shortcut and would be far worse: it would be a single edit away
+       from shipping.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false"/>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

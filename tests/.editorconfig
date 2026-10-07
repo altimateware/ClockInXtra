@@ -1,0 +1,24 @@
+# ClockInXtra — analyzer settings for test projects only.
+#
+# This file scopes rules to everything under tests/. It is an .editorconfig
+# rather than a nested Directory.Build.props on purpose: a Directory.Build.props
+# here would REPLACE the one at the repository root unless it explicitly
+# re-imported it, silently dropping the shared settings — including the NuGet
+# vulnerability audit. An .editorconfig is additive and carries no such trap.
+
+root = false
+
+[*.cs]
+
+# CA1707: "Identifiers should not contain underscores".
+#
+# Test methods are named Method_Scenario_Expectation, so a failure reads as a
+# sentence in the output: MetersBetween_IsZeroForTheSamePosition. That naming is
+# the reason the test report is readable, and the rule exists for public library
+# APIs, which these are not. Turned off for tests only — it still applies to
+# every production project.
+dotnet_diagnostic.CA1707.severity = none
+
+# CA1515: "Consider making public types internal".
+# Test classes are discovered by the runner and are conventionally public.
+dotnet_diagnostic.CA1515.severity = none
