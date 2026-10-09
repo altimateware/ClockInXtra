@@ -37,22 +37,26 @@
       CREATE LOGIN [app_mobile] WITH PASSWORD = N'<from secret store>',
           CHECK_POLICY = ON;
 
-  Then run this script, optionally overriding the principal names:
+  Then run this script, naming the three logins. All three are REQUIRED:
 
-      sqlcmd -S <server> -d ClockInXtra -E -C \
+      sqlcmd -S <server> -d ClockInXtra -E -C -b \
              -v MobileUser="app_mobile" AdminUser="app_admin" JobUser="app_jobs" \
              -i database/security/10_security_users_grants.sql
+
+  There are deliberately no defaults. This script used to carry
+  :setvar MobileUser "app_mobile" and so on, which looked like defaults and was
+  not: a :setvar runs AFTER sqlcmd has applied -v and reassigns the variable, so
+  every -v on the command line was silently discarded and the script went
+  looking for logins named app_* that nobody had created. Omitting a variable
+  now fails with "scripting variable not defined", which is the correct
+  outcome: granting rights to a principal nobody named is not something to
+  guess at.
 ==============================================================================*/
 
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
-GO
-
-:setvar MobileUser "app_mobile"
-:setvar AdminUser  "app_admin"
-:setvar JobUser    "app_jobs"
 GO
 
 /*------------------------------------------------------------------------------
