@@ -775,7 +775,7 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
     }
 
     /// <summary>Validation text the portal renders, for failure messages only.</summary>
-    [GeneratedRegex("""(?:field-validation-error[^>]*>|validation-summary-errors[\s\S]{0,200}?<li>)([^<]{3,300})""")]
+    [GeneratedRegex("""(?:field-validation-error[^>]*>|validation-summary-errors[\s\S]{0,200}?<li>|class="warning"[^>]*>)([^<]{3,300})""")]
     private static partial Regex ValidationComplaint();
 
     [GeneratedRegex("""name="__RequestVerificationToken"[^>]*value="([^"]+)""")]
