@@ -111,20 +111,36 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
     {
         foreach ((string key, string value) in RequiredSettings)
         {
-            // Only SettingValue. CK_ApplicationSetting_Confirmation ties
-            // RequiresBusinessConfirmation to ConfirmedUtc — 1 means unset, 0
-            // means set — so writing ConfirmedUtc on its own violates it, and
-            // confirmation is a business act rather than something a test
-            // performs. The attendance procedures read the value, not the
-            // confirmation, so a value is all these tests need.
+            // All three fields move together, because
+            // CK_ApplicationSetting_Confirmation ties them:
+            // RequiresBusinessConfirmation = 1 requires ConfirmedUtc to be NULL
+            // and 0 requires it not to be. Writing either on its own violates
+            // the constraint, which is how an earlier attempt at this broke
+            // every test in the class.
+            //
+            // The setting is left CONFIRMED rather than merely populated,
+            // because the settings page renders a confirmed value differently
+            // — its confirm box starts ticked so that editing the value does
+            // not silently withdraw the business's confirmation — and one of
+            // these tests asserts exactly that.
+            //
+            // The filter is the real definition of undecided, the same one the
+            // deployment report uses: no value AND no confirmation. A blank
+            // that has been confirmed is a decision (DEC-07 reads that way for
+            // retention), so matching on SettingValue alone would overwrite
+            // one.
             //
             // One statement, so a setting that already holds a decision is
             // never written to — not even briefly.
             int supplied = await ExecuteCountAsync(
                 """
                 UPDATE core.ApplicationSetting
-                SET SettingValue = @value
-                WHERE SettingKey = @key AND SettingValue IS NULL
+                SET SettingValue                 = @value,
+                    RequiresBusinessConfirmation = 0,
+                    ConfirmedUtc                 = SYSUTCDATETIME()
+                WHERE SettingKey = @key
+                  AND SettingValue IS NULL
+                  AND ConfirmedUtc IS NULL
                 """,
                 new { key, value });
 
@@ -143,7 +159,9 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
             await ExecuteAsync(
                 """
                 UPDATE core.ApplicationSetting
-                SET SettingValue = NULL
+                SET SettingValue                 = NULL,
+                    RequiresBusinessConfirmation = 1,
+                    ConfirmedUtc                 = NULL
                 WHERE SettingKey = @key
                 """,
                 new { key });
