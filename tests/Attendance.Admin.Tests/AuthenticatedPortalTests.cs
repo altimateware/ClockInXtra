@@ -719,7 +719,7 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
         [
             new("UserName", userName),
             new("Password", password),
-            new("__RequestVerificationToken", token.Groups[1].Value),
+            new("__RequestVerificationToken", AttributeValue(token)),
         ];
 
         if (code is not null)
@@ -739,6 +739,33 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Redirect, dashboard.StatusCode);
         Assert.Contains("/Account/Login", dashboard.Headers.Location?.OriginalString ?? string.Empty, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A value read out of an HTML attribute, decoded the way a browser would
+    /// decode it before posting it back.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not optional, and the reason is a bug this cost real time.</b> Razor
+    /// HTML-encodes attribute values, and its encoder is deliberately
+    /// aggressive: a <c>+</c> is written as <c>&amp;#x2B;</c>. Both a row
+    /// version and an anti-forgery token are base64, so each contains a
+    /// <c>+</c> roughly three times in ten.
+    /// </para>
+    /// <para>
+    /// A browser parses the character reference back to <c>+</c> and posts the
+    /// real value, so the portal is correct and users are unaffected. A test
+    /// that scrapes the raw HTML with a regular expression is not a browser: it
+    /// posted <c>AAAAAAAAC&amp;#x2B;I=</c>, which is not valid base64, and the
+    /// server refused the form with "that request was not valid". The failure
+    /// looked environmental — it appeared on Linux and not on Windows —
+    /// because whether the value contains a <c>+</c> depends on the row version
+    /// the database happens to be at, and CI rebuilds its database identically
+    /// every run while a development one does not.
+    /// </para>
+    /// </remarks>
+    private static string AttributeValue(Match match) =>
+        WebUtility.HtmlDecode(match.Groups[1].Value);
 
     /// <summary>
     /// Asserts that a form POST redirected, and reports what the page objected
@@ -865,7 +892,7 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
 
         if (token.Success)
         {
-            fields.Add(new KeyValuePair<string, string>("__RequestVerificationToken", token.Groups[1].Value));
+            fields.Add(new KeyValuePair<string, string>("__RequestVerificationToken", AttributeValue(token)));
         }
 
         using FormUrlEncodedContent content = new(fields);

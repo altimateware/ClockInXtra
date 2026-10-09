@@ -126,27 +126,18 @@ public sealed partial class AuthenticatedPortalTests
             // refusal this test would otherwise be investigating.
             Assert.True(rowVersion.Success, "the edit form carried no row version");
 
+            // Decoded as a browser would. The attribute holds base64, and Razor
+            // writes a + as &#x2B;, which is not base64 — see AttributeValue.
+            Assert.Equal(8, Convert.FromBase64String(AttributeValue(rowVersion)).Length);
+
             HttpResponseMessage saved = await PostAsync(client, $"/Employees/Edit/{id}",
-                [new("rowVersion", rowVersion.Groups[1].Value),
+                [new("rowVersion", AttributeValue(rowVersion)),
                  new("FirstName", "Old"), new("LastName", "Record"), new("EmployeeNumber", $"E-{tag}"),
                  new("Email", "old.record@example.com"), new("PhoneNumber", "08031234567"),
                  new("Department", department), new("JobTitle", jobTitle)],
                 formPath: $"/Employees/Edit/{id}");
 
-            // The row version is reported with the failure. It is base64 of
-            // eight bytes, so roughly three times in ten it contains a + or a
-            // /, and this test fails on CI while passing here — which is what
-            // a character that survives one transport and not another looks
-            // like. Decoded here too, to say whether the form carried a usable
-            // value or the POST lost it.
-            string encoded = rowVersion.Groups[1].Value;
-            byte[] buffer = new byte[16];
-            int decoded = Convert.TryFromBase64String(encoded, buffer, out int written) ? written : -1;
-
-            await AssertRedirectedAsync(
-                saved,
-                $"Saving employee {id} with its withdrawn department (row version \"{encoded}\", "
-                + $"{decoded.ToString(System.Globalization.CultureInfo.InvariantCulture)} bytes decoded)");
+            await AssertRedirectedAsync(saved, $"Saving employee {id} with its withdrawn department");
 
             (string? email, string? phone, string? storedDepartment, string? storedJobTitle) =
                 await QueryAsync<(string?, string?, string?, string?)>(
