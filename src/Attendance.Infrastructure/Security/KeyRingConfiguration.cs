@@ -262,7 +262,24 @@ public static class KeyRingConfiguration
         string normalised = thumbprint.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
 
         using X509Store store = new(StoreName.My, StoreLocation.LocalMachine);
-        store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+
+        try
+        {
+            store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+        }
+        catch (Exception exception) when (exception is CryptographicException or PlatformNotSupportedException)
+        {
+            // On Linux, .NET limits LocalMachine to the Root and
+            // CertificateAuthority stores, so this throws rather than returning
+            // nothing. Reported as a configuration problem naming the way out,
+            // because a raw cryptography error here reads like a broken
+            // certificate rather than a setting that cannot work on this
+            // platform.
+            throw new InvalidOperationException(
+                $"The certificate store LocalMachine\\My cannot be opened on this platform, so "
+                + $"DataProtection:CertificateThumbprint ({normalised}) cannot be resolved. On Linux, set "
+                + "DataProtection:CertificatePath to a PKCS#12 file instead.", exception);
+        }
 
         // validOnly: false — a key-encryption certificate does not need to chain
         // to a trusted root or be within its validity period to protect data

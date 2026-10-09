@@ -38,6 +38,46 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
 
     private const string Password = "correct horse battery staple";
 
+    /// <summary>
+    /// The attendance settings these tests need in order to mean anything, and
+    /// the values they are given when the database does not have them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this is here.</b> A freshly deployed database leaves every one of
+    /// these unset, on purpose: the system refuses to operate rather than invent
+    /// a business rule (Claude.md §15, §68). The settings page test and the
+    /// corrections test both read them — one renders the selected time zone,
+    /// the other cannot raise a correction while corrections are switched off
+    /// — so on a new database they failed while passing on a developer machine
+    /// where the decisions had already been made. That is a defect in the tests,
+    /// not in the deployment, and it surfaced the first time CI ran them against
+    /// a database it had created itself.
+    /// </para>
+    /// <para>
+    /// <b>Only what is missing is supplied.</b> A value the business has already
+    /// decided is left exactly as it is, by a single statement that matches only
+    /// unset rows — so this cannot repeat the incident where a test run quietly
+    /// replaced the decided settings. Whatever is filled in is returned to unset
+    /// on the way out. The values mirror DEC-06 and DEC-08, so the behaviour
+    /// under test is the behaviour that was decided.
+    /// </para>
+    /// </remarks>
+    private static readonly (string Key, string Value)[] RequiredSettings =
+    [
+        ("Attendance.BusinessTimeZoneId", "W. Central Africa Standard Time"),
+        ("Attendance.ClockInOpenTime", "00:00"),
+        ("Attendance.ClockInCloseTime", "08:30"),
+        ("Attendance.ClockInAfterCloseAction", "Reject"),
+        ("Attendance.ClockOutOpenTime", "00:00"),
+        ("Attendance.ClockOutBeforeOpenAction", "Reject"),
+        ("Attendance.MinimumMinutesBeforeClockOut", "1"),
+        ("Attendance.AllowCorrections", "true"),
+        ("Attendance.CorrectionsRequireApproval", "true"),
+    ];
+
+    private readonly List<string> _settingsSupplied = [];
+
     private WebApplicationFactory<Program> _factory = null!;
     private byte[] _totpSecret = null!;
 
@@ -59,10 +99,55 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
 
         await CreateAdministratorAsync(_privilegedUser, "Super Administrator");
         await CreateAdministratorAsync(_unprivilegedUser, role: null);
+
+        await SupplyMissingSettingsAsync();
+    }
+
+    /// <summary>
+    /// Fills in the settings in <see cref="RequiredSettings"/> that have no
+    /// value, recording which ones so they can be put back.
+    /// </summary>
+    private async Task SupplyMissingSettingsAsync()
+    {
+        foreach ((string key, string value) in RequiredSettings)
+        {
+            // One statement, so a setting that already holds a decision is
+            // never written to — not even briefly.
+            int supplied = await ExecuteCountAsync(
+                """
+                UPDATE core.ApplicationSetting
+                SET SettingValue = @value, ConfirmedUtc = SYSUTCDATETIME()
+                WHERE SettingKey = @key AND SettingValue IS NULL
+                """,
+                new { key, value });
+
+            if (supplied > 0)
+            {
+                _settingsSupplied.Add(key);
+            }
+        }
+    }
+
+    /// <summary>Returns the settings this test supplied to unset.</summary>
+    private async Task RestoreSuppliedSettingsAsync()
+    {
+        foreach (string key in _settingsSupplied)
+        {
+            await ExecuteAsync(
+                """
+                UPDATE core.ApplicationSetting
+                SET SettingValue = NULL, ConfirmedUtc = NULL
+                WHERE SettingKey = @key
+                """,
+                new { key });
+        }
+
+        _settingsSupplied.Clear();
     }
 
     public async ValueTask DisposeAsync()
     {
+        await RestoreSuppliedSettingsAsync();
         await RemoveAdministratorsAsync();
         await _factory.DisposeAsync();
     }
@@ -742,6 +827,20 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
         await connection.OpenAsync(TestContext.Current.CancellationToken);
 
         await connection.ExecuteAsync(new CommandDefinition(
+            sql, parameters, cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Runs a statement and returns how many rows it affected, which is how
+    /// SupplyMissingSettingsAsync knows whether it supplied a value or found one
+    /// already there.
+    /// </summary>
+    private static async Task<int> ExecuteCountAsync(string sql, object? parameters = null)
+    {
+        await using SqlConnection connection = new(ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+
+        return await connection.ExecuteAsync(new CommandDefinition(
             sql, parameters, cancellationToken: TestContext.Current.CancellationToken));
     }
 }
