@@ -210,32 +210,41 @@ BEGIN
 END
 GO
 
-/* Deferred self-references, added once the table exists. */
-IF OBJECT_ID(N'FK_Administrator_Administrator_CreatedBy', N'F') IS NULL
+/* Deferred self-references, added once the table exists.
+
+   The guards are schema-qualified on purpose. A foreign key belongs to the
+   schema of its table, and an unqualified OBJECT_ID resolves against the
+   DEFAULT SCHEMA OF THE CALLER — dbo, for the deployment account. Written as
+   OBJECT_ID(N'FK_...') these guards never found the constraints they were
+   guarding, so every one of them was always NULL and a second deployment failed
+   with "There is already an object named 'FK_...'". That made the whole runner
+   non-re-runnable, contrary to what its header promises, and it only surfaced
+   when deployment started running automatically at host startup. */
+IF OBJECT_ID(N'core.FK_Administrator_Administrator_CreatedBy', N'F') IS NULL
     ALTER TABLE core.Administrator WITH CHECK
         ADD CONSTRAINT FK_Administrator_Administrator_CreatedBy
             FOREIGN KEY (CreatedByAdministratorId) REFERENCES core.Administrator (AdministratorId);
 GO
 
-IF OBJECT_ID(N'FK_MobileUser_Administrator_CreatedBy', N'F') IS NULL
+IF OBJECT_ID(N'core.FK_MobileUser_Administrator_CreatedBy', N'F') IS NULL
     ALTER TABLE core.MobileUser WITH CHECK
         ADD CONSTRAINT FK_MobileUser_Administrator_CreatedBy
             FOREIGN KEY (CreatedByAdministratorId) REFERENCES core.Administrator (AdministratorId);
 GO
 
-IF OBJECT_ID(N'FK_MobileUser_Administrator_UpdatedBy', N'F') IS NULL
+IF OBJECT_ID(N'core.FK_MobileUser_Administrator_UpdatedBy', N'F') IS NULL
     ALTER TABLE core.MobileUser WITH CHECK
         ADD CONSTRAINT FK_MobileUser_Administrator_UpdatedBy
             FOREIGN KEY (UpdatedByAdministratorId) REFERENCES core.Administrator (AdministratorId);
 GO
 
-IF OBJECT_ID(N'FK_MfaCredential_Administrator_EnrolledBy', N'F') IS NULL
+IF OBJECT_ID(N'core.FK_MfaCredential_Administrator_EnrolledBy', N'F') IS NULL
     ALTER TABLE core.MfaCredential WITH CHECK
         ADD CONSTRAINT FK_MfaCredential_Administrator_EnrolledBy
             FOREIGN KEY (EnrolledByAdministratorId) REFERENCES core.Administrator (AdministratorId);
 GO
 
-IF OBJECT_ID(N'FK_MfaCredential_Administrator_RevokedBy', N'F') IS NULL
+IF OBJECT_ID(N'core.FK_MfaCredential_Administrator_RevokedBy', N'F') IS NULL
     ALTER TABLE core.MfaCredential WITH CHECK
         ADD CONSTRAINT FK_MfaCredential_Administrator_RevokedBy
             FOREIGN KEY (RevokedByAdministratorId) REFERENCES core.Administrator (AdministratorId);

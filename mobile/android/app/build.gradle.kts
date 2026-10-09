@@ -26,7 +26,7 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.contoso.clockinxtra"
+    namespace = "com.altimateware.clockinxtra"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -40,7 +40,7 @@ android {
         // attestation the server verifies, alongside the signing certificate
         // digest. Changing it means reconfiguring Attestation:Android:
         // ExpectedPackageName on the API, or every registration is refused.
-        applicationId = "com.contoso.clockinxtra"
+        applicationId = "com.altimateware.clockinxtra"
 
         // Android 9 (API 28) is the floor recommended in OPEN-31, and this is
         // where the reason bites: setUnlockedDeviceRequired and StrongBox-backed

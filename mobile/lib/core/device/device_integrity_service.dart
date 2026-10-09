@@ -58,7 +58,7 @@ final class IntegrityReport {
 final class PlatformDeviceIntegrityService implements DeviceIntegrityService {
   /// Creates the service.
   const PlatformDeviceIntegrityService({
-    this.channel = const MethodChannel('com.contoso.clockinxtra/integrity'),
+    this.channel = const MethodChannel('com.altimateware.clockinxtra/integrity'),
     this.allowCompromisedForDevelopment = false,
   });
 

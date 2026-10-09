@@ -1,4 +1,4 @@
-package com.contoso.clockinxtra
+package com.altimateware.clockinxtra
 
 import android.content.Context
 import android.content.pm.PackageManager

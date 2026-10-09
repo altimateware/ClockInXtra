@@ -271,7 +271,7 @@ public sealed class AndroidKeyAttestationVerifierTests : IDisposable
     /// What it contains, decoded: attestation version 400; security level Software
     /// (0); a 32-byte challenge; an empty hardware-enforced list; and, in the
     /// software-enforced list, a root of trust reporting an unlocked, unverified boot
-    /// plus the application id for <c>com.contoso.clockinxtra</c>. It is not secret —
+    /// plus the application id for <c>com.altimateware.clockinxtra</c>. It is not secret —
     /// an attestation extension is part of a public certificate.
     /// </para>
     /// <para>

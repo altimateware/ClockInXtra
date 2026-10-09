@@ -30,7 +30,7 @@
   one of these means:
 
       -- Preferred, where Active Directory is available (no password anywhere):
-      CREATE LOGIN [CONTOSO\svc_ClockInXtra_Api$] FROM WINDOWS;
+      CREATE LOGIN [ALTIMATEWARE\svc_ClockInXtra_Api$] FROM WINDOWS;
 
       -- Fallback, SQL authentication; the password comes from the
       -- organisation's secret store and is typed by the operator:

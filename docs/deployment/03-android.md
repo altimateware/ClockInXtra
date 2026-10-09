@@ -12,7 +12,7 @@
 | JDK | 17 or 21 |
 | Android SDK | Platform and build-tools for the `compileSdk` the Flutter version selects |
 | Minimum device | Android 9 (API 28, `minSdk = 28`) with a hardware-backed keystore. Devices without one cannot pass key attestation and cannot register |
-| Package name | `com.contoso.clockinxtra`. Change it before the first release if the organisation uses its own namespace: it is bound into every key attestation and cannot be changed later without re-registering every device |
+| Package name | `com.altimateware.clockinxtra`. Change it before the first release if the organisation uses its own namespace: it is bound into every key attestation and cannot be changed later without re-registering every device |
 
 ## 2. The release signing key
 
@@ -52,7 +52,7 @@ The API address is compiled in. Release builds accept **only `https://`**; the c
 
 ```bash
 cd mobile
-flutter build apk --release --dart-define=CLOCKINXTRA_API_BASE_URL=https://attendance.contoso.com
+flutter build apk --release --dart-define=CLOCKINXTRA_API_BASE_URL=https://attendance.altimateware.com
 ```
 
 or `flutter build appbundle --release ...` if the distribution channel wants an app bundle.

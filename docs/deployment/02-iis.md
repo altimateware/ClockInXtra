@@ -37,7 +37,7 @@ Set on both application pools:
 | `SqlServer__ConnectionString` | `Server=sql01.corp.local;Database=ClockInXtra;Integrated Security=True;Encrypt=True;Pool Blocking Period=NeverBlock` (gMSA), or a SQL login from the secret store. Never `TrustServerCertificate=True` in production. The blocking period is explained below |
 | `DataProtection__KeyRingPath` | `\\keys01\clockinxtra-keyring` — **the same path for the API and the portal** |
 | `DataProtection__CertificateThumbprint` | Thumbprint of the key-encryption certificate |
-| `AllowedHosts` | The site's own host name(s), e.g. `attendance.contoso.com`. The shipped value `*` accepts any `Host` header |
+| `AllowedHosts` | The site's own host name(s), e.g. `attendance.altimateware.com`. The shipped value `*` accepts any `Host` header |
 
 API only:
 
@@ -46,11 +46,28 @@ API only:
 | `Api__KnownProxies__0`, `__1`, … | IP address of each reverse proxy. Forwarded headers are honoured from these addresses only, and never from a wildcard: the request signature covers the host the phone saw, so a spoofable `X-Forwarded-Host` would let a signature verify against something the phone never signed |
 | `Api__RateLimits__*` | Per-minute limits for attendance, registration and read endpoints (defaults 10 / 5 / 60). `Api__RateLimits__WindowSeconds` and `Api__Abuse__WindowSeconds` set the window those limits are counted over; **leave both at 60**, which is what "per minute" means. They exist because the test suite lengthens them so a slow run cannot cross a window boundary mid-test |
 | `Attestation__Android__RootCertificatePemPath` | Google's hardware attestation root certificate(s), downloaded and verified out of band (see `03-android.md` §5) |
-| `Attestation__Android__ExpectedPackageName` | `com.contoso.clockinxtra` (or the organisation's own package name) |
+| `Attestation__Android__ExpectedPackageName` | `com.altimateware.clockinxtra` (or the organisation's own package name) |
 | `Attestation__Android__ExpectedSigningCertificateDigests__0` | SHA-256 of the release signing certificate (see `03-android.md` §3) |
 | `Attestation__Android__RevocationStatusListPath` | Local copy of Google's attestation revocation list, refreshed on a schedule. Until set, revocation is not checked and each accepted registration records that |
 
 Without the attestation settings every registration is refused with `ANDROID_ATTESTATION_NOT_CONFIGURED`. That refusal is deliberate: an unconfigured check must not pass.
+
+### Automatic database deployment, and why it is off here
+
+Both hosts can create the database and every object in it when they start, and in Development both do. **Outside Development it is off unless you switch it on**, because deployment needs `CREATE DATABASE`, DDL across every schema and `ENABLE LEDGER` — rights the application logins must never hold (§48). Leaving it on by default would push you into granting the API's own login enough privilege to drop the database it is protecting.
+
+| Setting | Value |
+|---|---|
+| `Database__AutoDeploy` | `true` to deploy at startup on this server. Absent means off outside Development |
+| `Database__Name` | `ClockInXtra`. Must match the `Initial Catalog` of `SqlServer__ConnectionString`; a mismatch is refused at startup rather than creating one database and using another |
+| `Database__ConnectionString` | A **separate deployment identity** with the rights above, used for the few seconds of startup and never for a request. Empty means use `SqlServer__ConnectionString`, which on a server is what you are trying to avoid |
+| `Database__LockTimeoutSeconds` | `300`. How long a host waits for another host that is already deploying before failing to start |
+
+Starting the API and the portal at the same moment is safe: they queue on an application lock in `master`, one deploys and the other finds the work done (TD-18). Either order works, and a host killed part way through leaves no lock behind and no partial record — the next start deploys again.
+
+**What it will not do to a database that already exists.** `00_create_database.sql` sets `READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE`, which disconnects every open session. That is correct when you run it by hand on a database nobody is using, and unacceptable at the startup of one host among several serving traffic. Automatic deployment therefore runs it **only when the database does not exist**. An existing database gets its objects, never its database-level settings — so if you change those scripts, apply them yourself during a maintenance window.
+
+Least privilege is still a separate step either way: `database/security/10_security_users_grants.sql` needs the application logins to exist and is never run automatically.
 
 ### Why the connection string says `Pool Blocking Period=NeverBlock`
 
@@ -92,7 +109,7 @@ The key ring encrypts every TOTP secret. Lose it and every employee and administ
 
 For each application (API on the DMZ-facing nodes, portal on the internal node):
 
-1. **Application pool:** *.NET CLR version* = **No Managed Code**; pipeline *Integrated*; identity = the gMSA (`CONTOSO\gmsa-cix-api$` / `gmsa-cix-admin$`) or a dedicated low-privilege account. One pool per application: they are separate database principals (DB-01).
+1. **Application pool:** *.NET CLR version* = **No Managed Code**; pipeline *Integrated*; identity = the gMSA (`ALTIMATEWARE\gmsa-cix-api$` / `gmsa-cix-admin$`) or a dedicated low-privilege account. One pool per application: they are separate database principals (DB-01).
 2. **Site:** physical path = the published folder; HTTPS binding on 443 with the site certificate; **no HTTP binding** on the API. The portal may keep an HTTP binding only to redirect.
 3. **Folder permissions:** the pool identity needs *Read & execute* on the site folder, and *Modify* on its `logs` folder only.
 4. Recycle the pool after changing environment variables.

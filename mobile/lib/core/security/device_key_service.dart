@@ -76,7 +76,7 @@ final class DeviceKeyException implements Exception {
 final class PlatformDeviceKeyService implements DeviceKeyService {
   /// Creates the service.
   const PlatformDeviceKeyService([
-    this._channel = const MethodChannel('com.contoso.clockinxtra/device_key'),
+    this._channel = const MethodChannel('com.altimateware.clockinxtra/device_key'),
   ]);
 
   final MethodChannel _channel;

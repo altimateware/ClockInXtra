@@ -34,4 +34,18 @@
     <ProjectReference Include="..\Attendance.Domain\Attendance.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      The database scripts travel with the assembly, so a published application
+      cannot be separated from the schema it expects. The logical name keeps the
+      path, because database/deploy/01_run_all.sql refers to its includes by
+      path and that list is the single source of the deployment order.
+
+      database/tests is excluded: a smoke suite is not part of a deployment.
+    -->
+    <EmbeddedResource Include="..\..\database\**\*.sql" Exclude="..\..\database\tests\**\*.sql">
+      <LogicalName>db/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>
