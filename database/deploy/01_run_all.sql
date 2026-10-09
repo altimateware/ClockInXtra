@@ -19,7 +19,13 @@
   the current working directory, not to this file:
 
       cd database
-      sqlcmd -S localhost -d ClockInXtra -E -C -b -I -i "deploy\01_run_all.sql"
+      sqlcmd -S localhost -d ClockInXtra -E -C -b -I -i "deploy/01_run_all.sql"
+
+  The include paths below use forward slashes deliberately. Windows accepts
+  them and Linux requires them: with backslashes, sqlcmd on Linux refuses
+  every include with 'Invalid filename.' and the deployment stops at the
+  first table script. Automatic deployment is unaffected either way, because
+  SqlScriptSet normalises separators before resolving a resource.
 
       In SSMS: Query menu -> SQLCMD Mode, set the working directory
       accordingly, then execute.
@@ -56,113 +62,113 @@ GO
 /*--------------------------------------------------------------- 1. schema ----*/
 PRINT '--- Schemas and tables ---';
 GO
-:r schema\01_schemas.sql
-:r schema\02_tables_identity.sql
-:r schema\03_tables_device.sql
-:r schema\04_tables_attendance.sql
-:r schema\05_tables_request_hygiene.sql
-:r schema\06_tables_settings.sql
-:r schema\07_tables_audit_ledger.sql
-:r schema\08_tables_reference_lists.sql
+:r schema/01_schemas.sql
+:r schema/02_tables_identity.sql
+:r schema/03_tables_device.sql
+:r schema/04_tables_attendance.sql
+:r schema/05_tables_request_hygiene.sql
+:r schema/06_tables_settings.sql
+:r schema/07_tables_audit_ledger.sql
+:r schema/08_tables_reference_lists.sql
 
 /*------------------------------------------------------ 2. programmability ----*/
 /* 'core' procedures are shared internals called only by the mobile, admin and
    job procedures, so they are deployed first. */
 PRINT '--- Stored procedures (core: shared internals) ---';
 GO
-:r programmability\core\usp_ApplicationSetting_GetAttendanceRules.sql
-:r programmability\core\usp_AuditLog_Create.sql
-:r programmability\core\usp_SecurityEvent_Create.sql
-:r programmability\core\usp_AuthenticationAttempt_Check.sql
-:r programmability\core\usp_AuthenticationAttempt_RegisterFailure.sql
-:r programmability\core\usp_AuthenticationAttempt_Reset.sql
-:r programmability\core\usp_MfaCredential_TryConsumeTimeStep.sql
+:r programmability/core/usp_ApplicationSetting_GetAttendanceRules.sql
+:r programmability/core/usp_AuditLog_Create.sql
+:r programmability/core/usp_SecurityEvent_Create.sql
+:r programmability/core/usp_AuthenticationAttempt_Check.sql
+:r programmability/core/usp_AuthenticationAttempt_RegisterFailure.sql
+:r programmability/core/usp_AuthenticationAttempt_Reset.sql
+:r programmability/core/usp_MfaCredential_TryConsumeTimeStep.sql
 
 PRINT '--- Stored procedures (mobile: attendance API) ---';
 GO
-:r programmability\mobile\usp_Device_IssueRegistrationChallenge.sql
-:r programmability\mobile\usp_Device_Register.sql
-:r programmability\mobile\usp_Device_GetForSignatureVerification.sql
-:r programmability\mobile\usp_Device_TouchLastSeen.sql
-:r programmability\mobile\usp_Device_GetStatus.sql
-:r programmability\mobile\usp_ApplicationSetting_GetMobileRuntime.sql
-:r programmability\mobile\usp_ApplicationSetting_GetSecurityPolicy.sql
-:r programmability\mobile\usp_RequestNonce_TryInsert.sql
-:r programmability\mobile\usp_Idempotency_TryBegin.sql
-:r programmability\mobile\usp_Idempotency_Complete.sql
-:r programmability\mobile\usp_MobileUser_GetForAuthentication.sql
-:r programmability\mobile\usp_OfficeLocation_GetActive.sql
-:r programmability\mobile\usp_Attendance_GetCurrentStatus.sql
-:r programmability\mobile\usp_Attendance_ClockIn.sql
-:r programmability\mobile\usp_Attendance_ClockOut.sql
+:r programmability/mobile/usp_Device_IssueRegistrationChallenge.sql
+:r programmability/mobile/usp_Device_Register.sql
+:r programmability/mobile/usp_Device_GetForSignatureVerification.sql
+:r programmability/mobile/usp_Device_TouchLastSeen.sql
+:r programmability/mobile/usp_Device_GetStatus.sql
+:r programmability/mobile/usp_ApplicationSetting_GetMobileRuntime.sql
+:r programmability/mobile/usp_ApplicationSetting_GetSecurityPolicy.sql
+:r programmability/mobile/usp_RequestNonce_TryInsert.sql
+:r programmability/mobile/usp_Idempotency_TryBegin.sql
+:r programmability/mobile/usp_Idempotency_Complete.sql
+:r programmability/mobile/usp_MobileUser_GetForAuthentication.sql
+:r programmability/mobile/usp_OfficeLocation_GetActive.sql
+:r programmability/mobile/usp_Attendance_GetCurrentStatus.sql
+:r programmability/mobile/usp_Attendance_ClockIn.sql
+:r programmability/mobile/usp_Attendance_ClockOut.sql
 
 PRINT '--- Stored procedures (admin: administration portal) ---';
 GO
-:r programmability\admin\usp_OfficeLocation_Create.sql
-:r programmability\admin\usp_OfficeLocation_Update.sql
-:r programmability\admin\usp_OfficeLocation_SetStatus.sql
-:r programmability\admin\usp_OfficeLocation_GetAll.sql
-:r programmability\admin\usp_MobileUser_Update.sql
-:r programmability\admin\usp_MobileUser_GetById.sql
-:r programmability\admin\usp_ReferenceList_GetAll.sql
-:r programmability\admin\usp_ReferenceList_Save.sql
-:r programmability\admin\usp_ReferenceList_SetStatus.sql
-:r programmability\admin\usp_Device_Approve.sql
-:r programmability\admin\usp_Device_Revoke.sql
-:r programmability\admin\usp_ApplicationSetting_GetAll.sql
-:r programmability\admin\usp_TimeZone_GetAll.sql
-:r programmability\admin\usp_ApplicationSetting_Set.sql
-:r programmability\admin\usp_MobileUser_Create.sql
-:r programmability\admin\usp_MobileUser_Search.sql
-:r programmability\admin\usp_Administrator_GetForAuthentication.sql
-:r programmability\admin\usp_Administrator_Create.sql
-:r programmability\admin\usp_Attendance_GetDailyReport.sql
-:r programmability\admin\usp_Attendance_RequestCorrection.sql
-:r programmability\admin\usp_Attendance_ApproveCorrection.sql
-:r programmability\admin\usp_Attendance_GetForCorrection.sql
-:r programmability\admin\usp_AttendanceCorrection_Search.sql
-:r programmability\admin\usp_AuditLog_Search.sql
-:r programmability\admin\ufn_Report_ValidationFailureCategory.sql
-:r programmability\admin\usp_Report_GetValidationFailures.sql
-:r programmability\admin\usp_Report_GetFilterOptions.sql
-:r programmability\admin\usp_MfaCredential_Enrol.sql
-:r programmability\admin\usp_MfaCredential_Activate.sql
-:r programmability\admin\usp_MfaCredential_Revoke.sql
-:r programmability\admin\usp_Device_GetPendingApprovals.sql
-:r programmability\admin\usp_MobileUser_SetStatus.sql
-:r programmability\admin\usp_Administrator_RecordLogin.sql
-:r programmability\admin\usp_Administrator_RecordLogout.sql
-:r programmability\admin\usp_Administrator_TryConsumeTimeStep.sql
-:r programmability\admin\usp_Administrator_Bootstrap.sql
-:r programmability\admin\usp_MfaCredential_GetForActivation.sql
-:r programmability\admin\usp_Administrator_CheckAuthorityOver.sql
-:r programmability\admin\usp_Administrator_CheckManagerRemains.sql
-:r programmability\admin\usp_Administrator_EnrolMfa.sql
-:r programmability\admin\usp_Administrator_ChangePassword.sql
-:r programmability\admin\usp_Administrator_ResetPassword.sql
-:r programmability\admin\usp_Administrator_SetStatus.sql
-:r programmability\admin\usp_Administrator_SetRole.sql
-:r programmability\admin\usp_Administrator_Search.sql
-:r programmability\admin\usp_Role_GetAll.sql
+:r programmability/admin/usp_OfficeLocation_Create.sql
+:r programmability/admin/usp_OfficeLocation_Update.sql
+:r programmability/admin/usp_OfficeLocation_SetStatus.sql
+:r programmability/admin/usp_OfficeLocation_GetAll.sql
+:r programmability/admin/usp_MobileUser_Update.sql
+:r programmability/admin/usp_MobileUser_GetById.sql
+:r programmability/admin/usp_ReferenceList_GetAll.sql
+:r programmability/admin/usp_ReferenceList_Save.sql
+:r programmability/admin/usp_ReferenceList_SetStatus.sql
+:r programmability/admin/usp_Device_Approve.sql
+:r programmability/admin/usp_Device_Revoke.sql
+:r programmability/admin/usp_ApplicationSetting_GetAll.sql
+:r programmability/admin/usp_TimeZone_GetAll.sql
+:r programmability/admin/usp_ApplicationSetting_Set.sql
+:r programmability/admin/usp_MobileUser_Create.sql
+:r programmability/admin/usp_MobileUser_Search.sql
+:r programmability/admin/usp_Administrator_GetForAuthentication.sql
+:r programmability/admin/usp_Administrator_Create.sql
+:r programmability/admin/usp_Attendance_GetDailyReport.sql
+:r programmability/admin/usp_Attendance_RequestCorrection.sql
+:r programmability/admin/usp_Attendance_ApproveCorrection.sql
+:r programmability/admin/usp_Attendance_GetForCorrection.sql
+:r programmability/admin/usp_AttendanceCorrection_Search.sql
+:r programmability/admin/usp_AuditLog_Search.sql
+:r programmability/admin/ufn_Report_ValidationFailureCategory.sql
+:r programmability/admin/usp_Report_GetValidationFailures.sql
+:r programmability/admin/usp_Report_GetFilterOptions.sql
+:r programmability/admin/usp_MfaCredential_Enrol.sql
+:r programmability/admin/usp_MfaCredential_Activate.sql
+:r programmability/admin/usp_MfaCredential_Revoke.sql
+:r programmability/admin/usp_Device_GetPendingApprovals.sql
+:r programmability/admin/usp_MobileUser_SetStatus.sql
+:r programmability/admin/usp_Administrator_RecordLogin.sql
+:r programmability/admin/usp_Administrator_RecordLogout.sql
+:r programmability/admin/usp_Administrator_TryConsumeTimeStep.sql
+:r programmability/admin/usp_Administrator_Bootstrap.sql
+:r programmability/admin/usp_MfaCredential_GetForActivation.sql
+:r programmability/admin/usp_Administrator_CheckAuthorityOver.sql
+:r programmability/admin/usp_Administrator_CheckManagerRemains.sql
+:r programmability/admin/usp_Administrator_EnrolMfa.sql
+:r programmability/admin/usp_Administrator_ChangePassword.sql
+:r programmability/admin/usp_Administrator_ResetPassword.sql
+:r programmability/admin/usp_Administrator_SetStatus.sql
+:r programmability/admin/usp_Administrator_SetRole.sql
+:r programmability/admin/usp_Administrator_Search.sql
+:r programmability/admin/usp_Role_GetAll.sql
 
 PRINT '--- Stored procedures (job: scheduled maintenance) ---';
 GO
-:r programmability\job\usp_Maintenance_PurgeRequestNonce.sql
-:r programmability\job\usp_Maintenance_PurgeIdempotency.sql
-:r programmability\job\usp_Maintenance_PurgeChallenges.sql
-:r programmability\job\usp_Maintenance_PurgeAttendanceEvidence.sql
-:r programmability\job\usp_Maintenance_GenerateLedgerDigest.sql
-:r programmability\job\usp_Maintenance_VerifyLedger.sql
+:r programmability/job/usp_Maintenance_PurgeRequestNonce.sql
+:r programmability/job/usp_Maintenance_PurgeIdempotency.sql
+:r programmability/job/usp_Maintenance_PurgeChallenges.sql
+:r programmability/job/usp_Maintenance_PurgeAttendanceEvidence.sql
+:r programmability/job/usp_Maintenance_GenerateLedgerDigest.sql
+:r programmability/job/usp_Maintenance_VerifyLedger.sql
 
 PRINT '--- Stored procedures (recovery: break-glass, granted to no application account) ---';
 GO
-:r programmability\recovery\usp_Administrator_RecoverAccess.sql
+:r programmability/recovery/usp_Administrator_RecoverAccess.sql
 
 /*------------------------------------------------------------ 3. seed data ----*/
 PRINT '--- Reference and seed data ---';
 GO
-:r seed\20_seed_permissions_roles.sql
-:r seed\21_seed_settings.sql
+:r seed/20_seed_permissions_roles.sql
+:r seed/21_seed_settings.sql
 
 /*------------------------------------------------- 4. record the deployment ---*/
 DECLARE @scripts TABLE (ScriptName NVARCHAR(260) NOT NULL PRIMARY KEY);

@@ -430,7 +430,7 @@ Four, in **Settings → Secrets and variables → Actions**. None of them is a d
 | `VPS_SSH_KEY` | **Private** key, full PEM including the header and footer lines. Generate a key used for nothing else: `ssh-keygen -t ed25519 -C clockinxtra-deploy -f ./deploy_key`, then append `deploy_key.pub` to that account's `~/.ssh/authorized_keys` |
 | `VPS_KNOWN_HOSTS` | Output of `ssh-keyscan -H <host>`. Pinned on purpose: without it the workflow would accept any host key and could hand a release to anything answering that address |
 
-`VPS_SSH_PORT` is optional and defaults to 22.
+`VPS_PORT` is optional and defaults to 22.
 
 Also create an **environment** named `production` (Settings → Environments). The workflow targets it, so you can add required reviewers and make a deployment need a human approval.
 
