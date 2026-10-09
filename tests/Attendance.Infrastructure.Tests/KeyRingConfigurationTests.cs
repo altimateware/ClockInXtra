@@ -84,7 +84,73 @@ public sealed class KeyRingConfigurationTests
         // Spaces, as copied from the certificate manager, are tolerated; the
         // message names the thumbprint the operator has to go and find.
         Assert.Contains("00112233445566778899AABBCCDDEEFF00112233", refused.Message, StringComparison.Ordinal);
-        Assert.Contains("not found", refused.Message, StringComparison.Ordinal);
+
+        // What follows differs by platform, and both answers have to be
+        // actionable. On Windows the store opens and the certificate simply is
+        // not in it. On Linux it cannot be opened at all — .NET limits
+        // LocalMachine to the Root and CertificateAuthority stores — so a
+        // thumbprint can never resolve there however it is spelled, and the
+        // message has to say what to use instead rather than send an operator
+        // looking for a certificate that could not have been found.
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains("not found", refused.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("cannot be opened on this platform", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("DataProtection:CertificatePath", refused.Message, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// The route a Linux host has to take: a PKCS#12 file instead of a store
+    /// lookup. Exercised here because a thumbprint cannot work there at all.
+    /// </summary>
+    [Fact]
+    public void ACertificateFileThatDoesNotExistIsReportedByPath()
+    {
+        string missing = Path.Combine(Path.GetTempPath(), $"clockinxtra-absent-{Guid.NewGuid():N}.pfx");
+
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["DataProtection:KeyRingPath"] = Path.Combine(Path.GetTempPath(), "clockinxtra-keyring-test"),
+                ["DataProtection:CertificatePath"] = missing,
+            })
+            .Build();
+
+        InvalidOperationException refused = Assert.Throws<InvalidOperationException>(() =>
+            KeyRingConfiguration.AddSharedKeyRing(
+                new ServiceCollection(), configuration, new TestEnvironment(Environments.Production)));
+
+        Assert.Contains(missing, refused.Message, StringComparison.Ordinal);
+        Assert.Contains("does not exist", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ACertificatePathSatisfiesTheRequirementThatOneExists()
+    {
+        // Validation must accept either route. If it only knew about
+        // thumbprints, a correctly configured Linux host would be refused at
+        // startup for a certificate it had in fact supplied.
+        KeyRingOptions options = new()
+        {
+            KeyRingPath = "/var/lib/clockinxtra/keyring",
+            CertificatePath = "/etc/clockinxtra/keyring.pfx",
+        };
+
+        Assert.Empty(KeyRingConfiguration.Validate(options, isDevelopment: false));
+    }
+
+    [Fact]
+    public void NeitherAThumbprintNorAPathIsRefused()
+    {
+        KeyRingOptions options = new() { KeyRingPath = "/var/lib/clockinxtra/keyring" };
+
+        string problem = Assert.Single(KeyRingConfiguration.Validate(options, isDevelopment: false));
+
+        Assert.Contains("CertificatePath", problem, StringComparison.Ordinal);
     }
 
     private sealed class TestEnvironment(string name) : IHostEnvironment

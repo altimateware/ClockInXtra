@@ -111,12 +111,19 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
     {
         foreach ((string key, string value) in RequiredSettings)
         {
+            // Only SettingValue. CK_ApplicationSetting_Confirmation ties
+            // RequiresBusinessConfirmation to ConfirmedUtc — 1 means unset, 0
+            // means set — so writing ConfirmedUtc on its own violates it, and
+            // confirmation is a business act rather than something a test
+            // performs. The attendance procedures read the value, not the
+            // confirmation, so a value is all these tests need.
+            //
             // One statement, so a setting that already holds a decision is
             // never written to — not even briefly.
             int supplied = await ExecuteCountAsync(
                 """
                 UPDATE core.ApplicationSetting
-                SET SettingValue = @value, ConfirmedUtc = SYSUTCDATETIME()
+                SET SettingValue = @value
                 WHERE SettingKey = @key AND SettingValue IS NULL
                 """,
                 new { key, value });
@@ -136,7 +143,7 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
             await ExecuteAsync(
                 """
                 UPDATE core.ApplicationSetting
-                SET SettingValue = NULL, ConfirmedUtc = NULL
+                SET SettingValue = NULL
                 WHERE SettingKey = @key
                 """,
                 new { key });
