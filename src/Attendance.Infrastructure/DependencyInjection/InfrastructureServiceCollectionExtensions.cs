@@ -4,6 +4,7 @@ using Attendance.Application.Features.Configuration;
 using Attendance.Application.Features.Devices;
 using Attendance.Application.Features.Locations;
 using Attendance.Application.Services;
+using Attendance.Infrastructure.Deployment;
 using Attendance.Infrastructure.Persistence.Connection;
 using Attendance.Infrastructure.Persistence.Repositories;
 using Attendance.Infrastructure.Security;
@@ -54,6 +55,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<AttestationOptions>()
             .Bind(configuration.GetSection(AttestationOptions.SectionName));
 
+        AddDatabaseDeployment(services, configuration, environment);
+
         services.TryAddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
         services.TryAddSingleton<IClock, SystemClock>();
 
@@ -64,6 +67,35 @@ public static class InfrastructureServiceCollectionExtensions
         AddUseCases(services);
 
         return services;
+    }
+
+    /// <summary>
+    /// Automatic database deployment, registered identically for both hosts.
+    /// </summary>
+    /// <remarks>
+    /// Shared deliberately. Either host may be the first to start and find no
+    /// database, so both need this; registering it in one place is what stops
+    /// the API growing the ability and the portal silently losing it.
+    /// <para>
+    /// The default is ON in Development and OFF elsewhere. <c>Configure</c> runs
+    /// before <c>Bind</c>, so an explicit <c>Database:AutoDeploy</c> still wins.
+    /// See <see cref="DatabaseDeploymentOptions"/> for why the defaults differ.
+    /// </para>
+    /// </remarks>
+    private static void AddDatabaseDeployment(
+        IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
+    {
+        services.AddOptions<DatabaseDeploymentOptions>()
+            .Configure(options => options.AutoDeploy = environment.IsDevelopment())
+            .Bind(configuration.GetSection(DatabaseDeploymentOptions.SectionName));
+
+        services.TryAddSingleton(provider => new DatabaseDeployer(
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseDeploymentOptions>>(),
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<SqlServerOptions>>()
+                .Value.ConnectionString,
+            provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DatabaseDeployer>>()));
     }
 
     /// <summary>
@@ -113,6 +145,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IClock, SystemClock>();
 
         AddDataProtection(services, configuration, environment);
+        AddDatabaseDeployment(services, configuration, environment);
 
         // Shared with the API: hashing, TOTP, lockout counters and the security
         // event trail are the same mechanisms for both audiences.

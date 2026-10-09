@@ -6,6 +6,7 @@ using Attendance.Api.Configuration;
 using Attendance.Api.Diagnostics;
 using Attendance.Api.Middleware;
 using Attendance.Api.Security;
+using Attendance.Infrastructure.Deployment;
 using Attendance.Infrastructure.DependencyInjection;
 using Attendance.Infrastructure.Diagnostics;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -132,6 +133,11 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
     options.MultipartBodyLengthLimit = 64 * 1024);
 
 WebApplication app = builder.Build();
+
+// Create the database and its objects if they are not there yet. Safe to run
+// on every start and when the portal is starting at the same moment: see
+// DatabaseDeployer for how the two hosts are serialised.
+await app.DeployDatabaseAsync().ConfigureAwait(false);
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseForwardedHeaders();

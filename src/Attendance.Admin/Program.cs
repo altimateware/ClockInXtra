@@ -1,4 +1,5 @@
 using Attendance.Admin.Security;
+using Attendance.Infrastructure.Deployment;
 using Attendance.Infrastructure.DependencyInjection;
 using Attendance.Infrastructure.Diagnostics;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -78,6 +79,11 @@ builder.Services.AddAntiforgery(options =>
 });
 
 WebApplication app = builder.Build();
+
+// Create the database and its objects if they are not there yet. Before the
+// setup commands below, because creating the first administrator needs the
+// schema just as much as serving a page does.
+await app.DeployDatabaseAsync().ConfigureAwait(false);
 
 // One-time setup: create the first administrator and exit without serving.
 // Checked after the container is built so the command uses the same password

@@ -52,6 +52,23 @@ API only:
 
 Without the attestation settings every registration is refused with `ANDROID_ATTESTATION_NOT_CONFIGURED`. That refusal is deliberate: an unconfigured check must not pass.
 
+### Automatic database deployment, and why it is off here
+
+Both hosts can create the database and every object in it when they start, and in Development both do. **Outside Development it is off unless you switch it on**, because deployment needs `CREATE DATABASE`, DDL across every schema and `ENABLE LEDGER` — rights the application logins must never hold (§48). Leaving it on by default would push you into granting the API's own login enough privilege to drop the database it is protecting.
+
+| Setting | Value |
+|---|---|
+| `Database__AutoDeploy` | `true` to deploy at startup on this server. Absent means off outside Development |
+| `Database__Name` | `ClockInXtra`. Must match the `Initial Catalog` of `SqlServer__ConnectionString`; a mismatch is refused at startup rather than creating one database and using another |
+| `Database__ConnectionString` | A **separate deployment identity** with the rights above, used for the few seconds of startup and never for a request. Empty means use `SqlServer__ConnectionString`, which on a server is what you are trying to avoid |
+| `Database__LockTimeoutSeconds` | `300`. How long a host waits for another host that is already deploying before failing to start |
+
+Starting the API and the portal at the same moment is safe: they queue on an application lock in `master`, one deploys and the other finds the work done (TD-18). Either order works, and a host killed part way through leaves no lock behind and no partial record — the next start deploys again.
+
+**What it will not do to a database that already exists.** `00_create_database.sql` sets `READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE`, which disconnects every open session. That is correct when you run it by hand on a database nobody is using, and unacceptable at the startup of one host among several serving traffic. Automatic deployment therefore runs it **only when the database does not exist**. An existing database gets its objects, never its database-level settings — so if you change those scripts, apply them yourself during a maintenance window.
+
+Least privilege is still a separate step either way: `database/security/10_security_users_grants.sql` needs the application logins to exist and is never run automatically.
+
 ### Why the connection string says `Pool Blocking Period=NeverBlock`
 
 SqlClient's default for this key is `Auto`, which Microsoft documents as "Blocking period OFF for Azure SQL servers, but ON for all other SQL servers" — so an on-premises instance gets the blocking period. With it on, one failed login makes every subsequent connection open on that pool fail **immediately, with the first error replayed from cache**, for five seconds; each further failure doubles the period, up to one minute.
