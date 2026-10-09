@@ -2,6 +2,7 @@ using Attendance.Infrastructure.Deployment;
 using Attendance.Tests;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -139,6 +140,38 @@ public sealed class DatabaseDeployerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SaysSoWhenAnExistingDatabaseWasNotCreatedWithTheDocumentedOptions()
+    {
+        // A database prepared by hand before the first deployment. This is not
+        // hypothetical: the VPS this was first deployed to had exactly this
+        // collation and no read-committed snapshot, and objects deploy into such
+        // a database perfectly well — the difference surfaces later as
+        // comparison and blocking behaviour that no test reproduces.
+        await using (SqlConnection master = new(MasterConnectionString()))
+        {
+            await master.OpenAsync(TestContext.Current.CancellationToken);
+
+            await master.ExecuteAsync(
+                $"CREATE DATABASE [{_database}] COLLATE SQL_Latin1_General_CP1_CI_AS");
+        }
+
+        CapturingLogger log = new();
+
+        await Deployer(log).DeployAsync(TestContext.Current.CancellationToken);
+
+        // Deployed anyway: the options are reported, not enforced. Correcting a
+        // collation means rebuilding the database, which is not a decision a
+        // starting host should take.
+        Assert.NotEqual(0, await ScalarAsync<int>("SELECT COUNT(*) FROM sys.procedures"));
+
+        string warning = Assert.Single(log.Warnings);
+
+        Assert.Contains("SQL_Latin1_General_CP1_CI_AS", warning, StringComparison.Ordinal);
+        Assert.Contains("Latin1_General_100_CI_AS", warning, StringComparison.Ordinal);
+        Assert.Contains("READ_COMMITTED_SNAPSHOT is off", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DoesNothingWhenItIsSwitchedOff()
     {
         await Deployer(autoDeploy: false).DeployAsync(TestContext.Current.CancellationToken);
@@ -169,6 +202,9 @@ public sealed class DatabaseDeployerTests : IAsyncLifetime
     }
 
     private DatabaseDeployer Deployer(bool autoDeploy = true) =>
+        Deployer(NullLogger<DatabaseDeployer>.Instance, autoDeploy);
+
+    private DatabaseDeployer Deployer(ILogger<DatabaseDeployer> logger, bool autoDeploy = true) =>
         new(
             Options.Create(new DatabaseDeploymentOptions
             {
@@ -178,7 +214,33 @@ public sealed class DatabaseDeployerTests : IAsyncLifetime
                 CommandTimeoutSeconds = 180,
             }),
             ConnectionStringFor(_database),
-            NullLogger<DatabaseDeployer>.Instance);
+            logger);
+
+    /// <summary>Keeps the warnings, which is what one of these tests asserts on.</summary>
+    private sealed class CapturingLogger : ILogger<DatabaseDeployer>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+
+            if (logLevel >= LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
+        }
+    }
 
     private async Task<bool> DatabaseExistsAsync()
     {

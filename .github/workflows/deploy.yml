@@ -1,0 +1,250 @@
+name: Deploy to VPS
+
+# Publishes both hosts and installs them on the Ubuntu VPS over SSH.
+#
+# Deliberately NOT on every push to master. This deploys an attendance system
+# that employees are clocking in and out of; a release is an act someone
+# performs, not a side effect of merging. Run it from the Actions tab, or push
+# a v* tag.
+#
+# Built around the layout that already exists on the server, read from
+# /etc/systemd/system/clockinxtra-api.service and clockinxtra-backoffice.service:
+#
+#   /var/www/clockinxtra/api/current        -> releases/<timestamp>-<sha>
+#   /var/www/clockinxtra/backoffice/current -> releases/<timestamp>-<sha>
+#   User=clockinxtra, ports 6200 (api) and 6100 (back office)
+#   EnvironmentFile=/etc/clockinxtra/{api,backoffice}.env
+#
+# Each application has its own current symlink, because the units read separate
+# directories. They are switched together and rolled back together, so the two
+# cannot be left on different releases.
+#
+# What this workflow knows: how to reach the server. What it does not know: the
+# database password, the key-ring certificate, or any other secret. Those live
+# in /etc/clockinxtra/*.env on the VPS, so they are managed by whoever
+# administers the server and never pass through GitHub (Claude.md §47). The only
+# secrets here are the SSH credentials.
+#
+# Setup is documented in docs/deployment/06-ubuntu-vps.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or SHA to deploy
+        required: false
+        default: master
+  push:
+    tags: ["v*"]
+
+concurrency:
+  # One deployment at a time. Two overlapping releases would fight over the
+  # symlinks and the systemd restart.
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Publish and install
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    env:
+      API_ROOT: /var/www/clockinxtra/api
+      ADMIN_ROOT: /var/www/clockinxtra/backoffice
+      API_HEALTH: http://127.0.0.1:6200/health/ready
+      ADMIN_HEALTH: http://127.0.0.1:6100/health/ready
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Publish
+        run: |
+          dotnet publish src/Attendance.Api/Attendance.Api.csproj \
+            --configuration Release --runtime linux-x64 --no-self-contained \
+            --output publish/api
+          dotnet publish src/Attendance.Admin/Attendance.Admin.csproj \
+            --configuration Release --runtime linux-x64 --no-self-contained \
+            --output publish/admin
+
+      # The units must start the assemblies this solution actually builds:
+      # Attendance.Api.dll and Attendance.Admin.dll. Asserted here so a mismatch
+      # fails the job with a clear message rather than leaving systemd
+      # restarting a missing file every ten seconds.
+      - name: Check the payload matches what the units start
+        run: |
+          for dll in publish/api/Attendance.Api.dll publish/admin/Attendance.Admin.dll; do
+            if [ ! -f "$dll" ]; then
+              echo "::error::$dll was not published."
+              exit 1
+            fi
+          done
+          echo "Published Attendance.Api.dll and Attendance.Admin.dll."
+
+      # appsettings.Development.json carries developer defaults, including
+      # TrustServerCertificate and an unencrypted key ring. It must never reach
+      # a server: the hosts run as Production so it would be ignored, but a file
+      # that cannot be read by mistake is better than one that merely is not.
+      - name: Remove development configuration from the payload
+        run: find publish -name 'appsettings.Development.json' -delete -print
+
+      - name: Authorise SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          # Pinned from a secret rather than accepted on first use: trusting an
+          # unknown host key would let anything answering that address receive
+          # the deployment.
+          printf '%s\n' "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload the release
+        id: upload
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+        run: |
+          release="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::8}"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "mkdir -p '$API_ROOT/releases/$release' '$ADMIN_ROOT/releases/$release'"
+
+          rsync -az --delete -e "ssh -i ~/.ssh/deploy -p $PORT" publish/api/ "$USER@$HOST:$API_ROOT/releases/$release/"
+          rsync -az --delete -e "ssh -i ~/.ssh/deploy -p $PORT" publish/admin/ "$USER@$HOST:$ADMIN_ROOT/releases/$release/"
+
+      # Before the symlinks move, so the schema is in place for the new code
+      # while the old code is still serving. The scripts are idempotent and
+      # additive, which is what makes that order safe; a release carrying a
+      # breaking schema change is not deployable this way and needs a window.
+      #
+      # Run with the deployment identity from deploy.env, never the identity the
+      # applications serve with: creating and altering objects needs rights
+      # those accounts must not hold (§48, TD-18).
+      - name: Deploy the database
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+          RELEASE: ${{ steps.upload.outputs.release }}
+        run: |
+          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "ADMIN_ROOT='$ADMIN_ROOT' RELEASE='$RELEASE' bash -se" <<'REMOTE'
+          set -euo pipefail
+          set -a
+          . /etc/clockinxtra/deploy.env
+          set +a
+          cd "$ADMIN_ROOT/releases/$RELEASE"
+          exec dotnet Attendance.Admin.dll --deploy-database
+          REMOTE
+
+      - name: Switch over and restart
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+          RELEASE: ${{ steps.upload.outputs.release }}
+        run: |
+          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "API_ROOT='$API_ROOT' ADMIN_ROOT='$ADMIN_ROOT' RELEASE='$RELEASE' bash -se" <<'REMOTE'
+          set -euo pipefail
+
+          # Recorded before they move, so a failed health check can put both
+          # back. Per application, because the units read separate directories.
+          for root in "$API_ROOT" "$ADMIN_ROOT"; do
+            if [ -L "$root/current" ]; then
+              readlink -f "$root/current" > "$root/previous.path"
+            fi
+
+            ln -sfn "$root/releases/$RELEASE" "$root/current.new"
+            mv -Tf "$root/current.new" "$root/current"
+          done
+
+          sudo systemctl restart clockinxtra-api clockinxtra-backoffice
+          REMOTE
+
+      # A deployment that starts and does not serve is a failed deployment. The
+      # readiness probe covers the database, the key ring and, for the API, the
+      # attendance configuration, so a 200 means more than "the process is
+      # alive".
+      - name: Verify, and roll back if it does not serve
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+        run: |
+          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "API_ROOT='$API_ROOT' ADMIN_ROOT='$ADMIN_ROOT' API_HEALTH='$API_HEALTH' ADMIN_HEALTH='$ADMIN_HEALTH' bash -se" <<'REMOTE'
+          set -uo pipefail
+
+          probe() {
+            for _ in $(seq 1 30); do
+              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$1" || true)"
+              if [ "$code" = "200" ]; then
+                echo "  $1 -> 200"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "  $1 -> $code"
+            return 1
+          }
+
+          if probe "$API_HEALTH" && probe "$ADMIN_HEALTH"; then
+            echo "Both hosts are serving."
+            exit 0
+          fi
+
+          echo "A host did not become ready. Rolling back."
+          systemctl --no-pager status clockinxtra-api clockinxtra-backoffice || true
+          journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 60 --no-pager || true
+
+          rolled=0
+          for root in "$API_ROOT" "$ADMIN_ROOT"; do
+            if [ -s "$root/previous.path" ]; then
+              ln -sfn "$(cat "$root/previous.path")" "$root/current.new"
+              mv -Tf "$root/current.new" "$root/current"
+              echo "Rolled $root back to $(cat "$root/previous.path")."
+              rolled=1
+            fi
+          done
+
+          if [ "$rolled" = "1" ]; then
+            sudo systemctl restart clockinxtra-api clockinxtra-backoffice
+          else
+            echo "No previous release recorded; nothing to roll back to."
+          fi
+          exit 1
+          REMOTE
+
+      # Keeps the last five of each, so a rollback target always exists without
+      # the disk filling up.
+      - name: Prune old releases
+        if: success()
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+        run: |
+          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "API_ROOT='$API_ROOT' ADMIN_ROOT='$ADMIN_ROOT' bash -se" <<'REMOTE'
+          set -euo pipefail
+          for root in "$API_ROOT" "$ADMIN_ROOT"; do
+            keep="$(readlink -f "$root/current")"
+            cd "$root/releases"
+            ls -1dt */ | tail -n +6 | while read -r dir; do
+              if [ "$(readlink -f "$dir")" != "$keep" ]; then
+                rm -rf -- "$dir"
+                echo "pruned $root/releases/$dir"
+              fi
+            done
+          done
+          REMOTE

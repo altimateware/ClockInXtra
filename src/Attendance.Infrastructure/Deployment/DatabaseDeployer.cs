@@ -56,6 +56,17 @@ public sealed class DatabaseDeployer
     /// </summary>
     private const string FingerprintScriptName = "deployment/auto";
 
+    /// <summary>
+    /// What <c>00_create_database.sql</c> creates the database with, and what
+    /// every test and smoke run exercises. A Windows collation rather than a
+    /// <c>SQL_</c> one: the modern collations sort consistently with the .NET
+    /// comparisons the application makes and support supplementary characters.
+    /// </summary>
+    private const string ExpectedCollation = "Latin1_General_100_CI_AS";
+
+    /// <summary>SQL Server 2022. Ledger tables require it.</summary>
+    private const int ExpectedCompatibilityLevel = 160;
+
     private readonly DatabaseDeploymentOptions _options;
     private readonly string _applicationConnectionString;
     private readonly ILogger<DatabaseDeployer> _logger;
@@ -165,6 +176,8 @@ public sealed class DatabaseDeployer
             else
             {
                 _logger.ObjectsOnly(_options.Name);
+
+                await WarnIfOptionsDifferAsync(master, scripts, cancellationToken).ConfigureAwait(false);
             }
 
             await using SqlConnection target = new(DeploymentConnectionString(_options.Name));
@@ -271,6 +284,90 @@ public sealed class DatabaseDeployer
             $"Deployed automatically at host startup by {Environment.MachineName}.";
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reports when a database that already existed was not created with the
+    /// options this system is built and tested against.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A warning rather than a refusal, and it changes nothing. The options are
+    /// applied only at creation, because applying them afterwards disconnects
+    /// every open session, so the remedy is to rebuild the database — which
+    /// is a decision for whoever owns the data, not for a process that is
+    /// starting up. The point is that the difference is stated out loud instead
+    /// of being discovered months later as behaviour no test reproduces.
+    /// </para>
+    /// <para>
+    /// Only the options that change behaviour are checked. <c>RECOVERY FULL</c>
+    /// is deliberately not among them: it is a backup decision, it can be
+    /// changed at any time without disconnecting anyone, and a test environment
+    /// has every reason to run SIMPLE.
+    /// </para>
+    /// </remarks>
+    private async Task WarnIfOptionsDifferAsync(
+        SqlConnection master, SqlScriptSet scripts, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using SqlCommand command = Command(
+                master, scripts, "deploy/bootstrap/05_database_options.sql");
+
+            command.Parameters.Add("@DatabaseName", SqlDbType.NVarChar, 128).Value = _options.Name;
+
+            await using SqlDataReader reader =
+                await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            string collation = reader["CollationName"] as string ?? "unknown";
+            int compatibility = Convert.ToInt32(reader["CompatibilityLevel"], CultureInfo.InvariantCulture);
+            bool readCommittedSnapshot =
+                Convert.ToBoolean(reader["ReadCommittedSnapshotOn"], CultureInfo.InvariantCulture);
+            int snapshotIsolation =
+                Convert.ToInt32(reader["SnapshotIsolationState"], CultureInfo.InvariantCulture);
+
+            List<string> differences = [];
+
+            if (!string.Equals(collation, ExpectedCollation, StringComparison.OrdinalIgnoreCase))
+            {
+                differences.Add($"collation is {collation}, expected {ExpectedCollation}");
+            }
+
+            if (compatibility < ExpectedCompatibilityLevel)
+            {
+                differences.Add(
+                    $"compatibility level is {compatibility.ToString(CultureInfo.InvariantCulture)}, "
+                    + $"expected at least {ExpectedCompatibilityLevel.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            if (!readCommittedSnapshot)
+            {
+                differences.Add(
+                    "READ_COMMITTED_SNAPSHOT is off, so portal reports will block attendance writes");
+            }
+
+            // 1 = ON, 2 = OFF, and the transitional states are 0 and 3.
+            if (snapshotIsolation != 1)
+            {
+                differences.Add("ALLOW_SNAPSHOT_ISOLATION is not on");
+            }
+
+            if (differences.Count > 0)
+            {
+                _logger.OptionsDiffer(_options.Name, string.Join("; ", differences));
+            }
+        }
+        catch (SqlException exception)
+        {
+            // Reporting the options is a courtesy, not a precondition for
+            // deploying them.
+            _logger.NotInspectable(exception, _options.Name);
+        }
     }
 
     /// <summary>Runs every batch of a script, in order, stopping at the first failure.</summary>

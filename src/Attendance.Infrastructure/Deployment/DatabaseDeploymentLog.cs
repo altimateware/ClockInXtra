@@ -62,6 +62,16 @@ internal static partial class DatabaseDeploymentLog
     public static partial void NotInspectable(this ILogger logger, Exception exception, string database);
 
     [LoggerMessage(
+        EventId = 5010,
+        Level = LogLevel.Warning,
+        Message = "Database {Database} already existed and its options are not the documented ones: "
+            + "{Differences}. Objects deploy regardless, but comparison and blocking behaviour will differ "
+            + "from every environment this is tested in. These are set only when the database is created "
+            + "(00_create_database.sql), because applying them disconnects every open session, so correcting "
+            + "them means rebuilding the database \u2014 trivial while it is empty, disruptive later.")]
+    public static partial void OptionsDiffer(this ILogger logger, string database, string differences);
+
+    [LoggerMessage(
         EventId = 5009,
         Level = LogLevel.Warning,
         Message = "The deployment lock {Resource} could not be released explicitly. Closing the connection "

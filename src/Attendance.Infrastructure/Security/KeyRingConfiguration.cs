@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
@@ -42,6 +43,39 @@ public sealed class KeyRingOptions
     /// protected remains in the ring.
     /// </summary>
     public IList<string> PreviousCertificateThumbprints { get; } = [];
+
+    /// <summary>
+    /// Path to a PKCS#12 (.pfx) file holding the key-encryption certificate
+    /// and its private key, as an alternative to
+    /// <see cref="CertificateThumbprint"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this exists.</b> A thumbprint is resolved from
+    /// <c>LocalMachine\\My</c>, which is a Windows certificate store. On Linux,
+    /// .NET maps that location to a directory it will not write to, so a host
+    /// deployed there could never find the certificate and — because one is
+    /// required outside Development — would refuse to start. A file keeps the
+    /// same control on a platform that has no certificate store.
+    /// </para>
+    /// <para>
+    /// The file must be readable only by the service account: it holds the
+    /// private key that protects every authenticator secret. It is used with
+    /// <see cref="CertificatePassword"/>, and takes precedence over a
+    /// thumbprint when both are given.
+    /// </para>
+    /// </remarks>
+    public string? CertificatePath { get; set; }
+
+    /// <summary>Password for <see cref="CertificatePath"/>, if it has one.</summary>
+    public string? CertificatePassword { get; set; }
+
+    /// <summary>
+    /// Paths of earlier key-encryption certificates, still needed to read the
+    /// keys they protected. The file equivalent of
+    /// <see cref="PreviousCertificateThumbprints"/>.
+    /// </summary>
+    public IList<string> PreviousCertificatePaths { get; } = [];
 }
 
 /// <summary>
@@ -108,7 +142,24 @@ public static class KeyRingConfiguration
             builder.PersistKeysToFileSystem(new DirectoryInfo(options.KeyRingPath));
         }
 
-        if (!string.IsNullOrWhiteSpace(options.CertificateThumbprint))
+        // A file wins over a store lookup when both are set, because a path is
+        // unambiguous and a certificate store is not present on every platform.
+        if (!string.IsNullOrWhiteSpace(options.CertificatePath))
+        {
+            X509Certificate2 current = LoadCertificateFile(options.CertificatePath, options.CertificatePassword);
+            builder.ProtectKeysWithCertificate(current);
+
+            X509Certificate2[] readable =
+            [
+                current,
+                .. options.PreviousCertificatePaths
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(path => LoadCertificateFile(path, options.CertificatePassword)),
+            ];
+
+            builder.UnprotectKeysWithAnyCertificate(readable);
+        }
+        else if (!string.IsNullOrWhiteSpace(options.CertificateThumbprint))
         {
             X509Certificate2 current = LoadCertificate(options.CertificateThumbprint);
             builder.ProtectKeysWithCertificate(current);
@@ -147,14 +198,63 @@ public static class KeyRingConfiguration
                 "or authenticator secrets enrolled in the portal cannot be read by the API.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.CertificateThumbprint))
+        if (string.IsNullOrWhiteSpace(options.CertificateThumbprint)
+            && string.IsNullOrWhiteSpace(options.CertificatePath))
         {
             problems.Add(
-                "DataProtection:CertificateThumbprint is required: without it the key ring is written " +
-                "to disk unencrypted, and anyone who can read it can decrypt every authenticator secret.");
+                "DataProtection:CertificateThumbprint or DataProtection:CertificatePath is required: " +
+                "without one of them the key ring is written to disk unencrypted, and anyone who can " +
+                "read it can decrypt every authenticator secret. Use CertificatePath on Linux, where " +
+                "LocalMachine\\My is not a usable certificate store.");
         }
 
         return problems;
+    }
+
+    /// <summary>Loads the key-encryption certificate from a PKCS#12 file.</summary>
+    /// <remarks>
+    /// The same leniency as the store lookup: an expired certificate must still
+    /// decrypt the keys it protected, so validity is not checked. A private key
+    /// is not optional — without it the certificate protects nothing, and the
+    /// failure would otherwise appear as unreadable authenticator secrets long
+    /// after startup rather than as a refusal to start.
+    /// </remarks>
+    private static X509Certificate2 LoadCertificateFile(string path, string? password)
+    {
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException(
+                $"Data Protection certificate file '{path}' does not exist, or the service account " +
+                "cannot read it.");
+        }
+
+        X509Certificate2 certificate;
+
+        try
+        {
+            certificate = X509CertificateLoader.LoadPkcs12FromFile(
+                path,
+                string.IsNullOrEmpty(password) ? null : password,
+                X509KeyStorageFlags.EphemeralKeySet);
+        }
+        catch (CryptographicException exception)
+        {
+            // Deliberately echoes neither the password nor the file contents.
+            throw new InvalidOperationException(
+                $"Data Protection certificate file '{path}' could not be read. Check that it is PKCS#12 " +
+                "and that DataProtection:CertificatePassword is correct.", exception);
+        }
+
+        if (!certificate.HasPrivateKey)
+        {
+            certificate.Dispose();
+
+            throw new InvalidOperationException(
+                $"Data Protection certificate file '{path}' contains no private key. Export it with the " +
+                "key, for example: openssl pkcs12 -export -inkey key.pem -in cert.pem -out keyring.pfx");
+        }
+
+        return certificate;
     }
 
     private static X509Certificate2 LoadCertificate(string thumbprint)
@@ -162,7 +262,24 @@ public static class KeyRingConfiguration
         string normalised = thumbprint.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
 
         using X509Store store = new(StoreName.My, StoreLocation.LocalMachine);
-        store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+
+        try
+        {
+            store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+        }
+        catch (Exception exception) when (exception is CryptographicException or PlatformNotSupportedException)
+        {
+            // On Linux, .NET limits LocalMachine to the Root and
+            // CertificateAuthority stores, so this throws rather than returning
+            // nothing. Reported as a configuration problem naming the way out,
+            // because a raw cryptography error here reads like a broken
+            // certificate rather than a setting that cannot work on this
+            // platform.
+            throw new InvalidOperationException(
+                $"The certificate store LocalMachine\\My cannot be opened on this platform, so "
+                + $"DataProtection:CertificateThumbprint ({normalised}) cannot be resolved. On Linux, set "
+                + "DataProtection:CertificatePath to a PKCS#12 file instead.", exception);
+        }
 
         // validOnly: false — a key-encryption certificate does not need to chain
         // to a trusted root or be within its validity period to protect data
