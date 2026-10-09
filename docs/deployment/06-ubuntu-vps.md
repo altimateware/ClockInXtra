@@ -90,6 +90,36 @@ Port 1433 is deliberately absent, and the applications reach the database over l
 ufw status verbose          # confirm 1433 is still absent
 ```
 
+### 3.2a Drop the empty database and let the deployment create it
+
+**Do this before the first deployment.** On this server, `sys.databases` shows a database `clockinxtra` with **0 tables** and collation `SQL_Latin1_General_CP1_CI_AS`. It was prepared by hand ahead of time, and keeping it would be the wrong baseline for three reasons:
+
+| | It has | It should have |
+|---|---|---|
+| Collation | `SQL_Latin1_General_CP1_CI_AS` | `Latin1_General_100_CI_AS` |
+| `READ_COMMITTED_SNAPSHOT` | off | **on** |
+| `ALLOW_SNAPSHOT_ISOLATION` | off | on |
+| Compatibility level | instance default | 160 |
+
+The reason it matters is a consequence of how automatic deployment works. `00_create_database.sql` sets all four, and it runs **only when the deployment creates the database** — because it contains `ALTER DATABASE … SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE`, which disconnects every open session and must never fire at the startup of one host among several serving traffic (TD-18). So a database that already exists receives its objects and never its options.
+
+Objects deploy into it perfectly. The difference shows up later, as comparison and blocking behaviour that no test reproduces: `READ_COMMITTED_SNAPSHOT` off means the portal's reports take shared locks and **block attendance writes**, which is the specific problem that setting was chosen to avoid, and a different collation changes string comparison and sort order in a system whose every test and all 194 smoke cases run on the documented one.
+
+While it is empty this costs nothing to fix:
+
+```sql
+-- Nothing to lose: 0 tables. Verify that first.
+SELECT COUNT(*) FROM clockinxtra.sys.tables;   -- expect 0
+
+DROP DATABASE clockinxtra;
+```
+
+The first deployment then creates `ClockInXtra` with all four options correct, because it is the one creating it.
+
+> **If you keep it instead**, deployment still works and the hosts still start. The deployer now reports the difference on every start as a warning naming each one, so the divergence is at least visible in the journal rather than silent. But it will diverge from every environment this system is tested in, and correcting it afterwards means rebuilding the database with data in it.
+
+Note also that the database name is then `ClockInXtra`, matching `Database__Name` and the `Database=` in each connection string. The existing `clockinxtra` differs only in case, which both SQL Server (server collation is case-insensitive here) and the deployer's own check tolerate — but there is no reason to keep the discrepancy.
+
 ### 3.3 Application logins
 
 Create one login per application, each with its own password, and give them nothing beyond what the security script grants. Generate the passwords on the server; do not reuse them anywhere.
