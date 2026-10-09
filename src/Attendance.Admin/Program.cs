@@ -2,6 +2,7 @@ using Attendance.Admin.Security;
 using Attendance.Infrastructure.Deployment;
 using Attendance.Infrastructure.DependencyInjection;
 using Attendance.Infrastructure.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -78,12 +79,56 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SameSite = SameSiteMode.Strict;
 });
 
+// ---------------------------------------------------------------------------
+// Behind a reverse proxy that terminates TLS, Kestrel is reached over http.
+// Without this, UseHttpsRedirection below sees scheme "http" and redirects to
+// https, the proxy forwards the result over http again, and the browser loops
+// until it gives up. The Secure-only session and anti-forgery cookies would
+// also never be issued.
+//
+// Never wildcard (Claude.md §22, ASM-01): trusting X-Forwarded-* from any
+// caller lets an attacker choose the host and scheme the portal believes it is
+// serving, which reaches straight into redirect targets and cookie scope.
+// Empty means the headers are not processed at all, which is the safe default
+// for a directly exposed host and for IIS, where the ASP.NET Core Module
+// forwards them in process.
+// ---------------------------------------------------------------------------
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+        | ForwardedHeaders.XForwardedHost;
+
+    options.KnownProxies.Clear();
+    options.KnownIPNetworks.Clear();
+
+    foreach (string proxy in builder.Configuration.GetSection("Admin:KnownProxies").Get<string[]>() ?? [])
+    {
+        if (System.Net.IPAddress.TryParse(proxy, out System.Net.IPAddress? address))
+        {
+            options.KnownProxies.Add(address);
+        }
+    }
+});
+
 WebApplication app = builder.Build();
 
 // Create the database and its objects if they are not there yet. Before the
 // setup commands below, because creating the first administrator needs the
 // schema just as much as serving a page does.
 await app.DeployDatabaseAsync().ConfigureAwait(false);
+
+// Deploy the database and exit without serving. Two callers want exactly this:
+// a deployment that applies the schema as its own step, before any service is
+// started or while the old one still runs; and a build agent that needs the
+// objects in place before the integration tests connect. Both would otherwise
+// need sqlcmd and a copy of the script order, which is what the deployer
+// already owns. Database:AutoDeploy must be on for this to do anything, and it
+// reports plainly when it is not.
+if (args.Contains("--deploy-database", StringComparer.Ordinal))
+{
+    Console.WriteLine("Database deployment finished. Nothing is being served.");
+    return 0;
+}
 
 // One-time setup: create the first administrator and exit without serving.
 // Checked after the container is built so the command uses the same password
@@ -115,6 +160,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 
 // Security headers appropriate to a server-rendered portal. Unlike the JSON API,
