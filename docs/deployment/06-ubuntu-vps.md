@@ -35,8 +35,10 @@ These are deviations from decisions recorded elsewhere. None of them is hidden b
            │ http, loopback only
      ┌─────┴──────┐
      ▼            ▼
-127.0.0.1:5001  127.0.0.1:5002
+127.0.0.1:6200  127.0.0.1:6100
  Attendance.Api  Attendance.Admin
+ api.clockinxtra  clockinxtra
+   .xwoks.com      .xwoks.com
      └─────┬──────┘
            ▼
    SQL Server 2022 (localhost:1433)
@@ -104,8 +106,8 @@ After the first deployment has created the database, apply least privilege and g
 The security script is **not** in the published output — `dotnet publish` ships assemblies, and the scripts travel inside `Attendance.Infrastructure.dll` as embedded resources, where `sqlcmd` cannot reach them. Get the `database` folder onto the server once, from a checkout:
 
 ```bash
-git clone --depth 1 https://github.com/altimateware/ClockInXtra.git /opt/clockinxtra/scripts
-cd /opt/clockinxtra/scripts/database
+git clone --depth 1 https://github.com/altimateware/ClockInXtra.git /var/www/clockinxtra/scripts
+cd /var/www/clockinxtra/scripts/database
 
 sqlcmd -S localhost -U sa -C -d ClockInXtra -b -I -i security/10_security_users_grants.sql \
   -v MobileUser="clockinxtra_api" AdminUser="clockinxtra_admin" JobUser="clockinxtra_jobs"
@@ -125,10 +127,18 @@ GRANT ENABLE LEDGER TO clockinxtra_deploy;           -- required by audit.*
 ### 3.4 Service user, directories and the key ring
 
 ```bash
-adduser --system --group --no-create-home --home /opt/clockinxtra clockinxtra
+# The units already say User=clockinxtra, but the account does not exist yet,
+# which is why both services are installed and disabled. Create it first or
+# every start fails with status=217/USER.
+adduser --system --group --no-create-home --home /var/www/clockinxtra clockinxtra
 
-mkdir -p /opt/clockinxtra/releases /var/lib/clockinxtra/keyring /etc/clockinxtra
-chown -R clockinxtra:clockinxtra /opt/clockinxtra /var/lib/clockinxtra
+# The release directories the units' current symlinks will point into, plus the
+# key ring and the environment files they read.
+mkdir -p /var/www/clockinxtra/api/releases \
+         /var/www/clockinxtra/backoffice/releases \
+         /var/lib/clockinxtra/keyring \
+         /etc/clockinxtra
+chown -R clockinxtra:clockinxtra /var/www/clockinxtra /var/lib/clockinxtra
 chmod 750 /var/lib/clockinxtra/keyring
 
 # The key ring protection certificate (TD-06). Both hosts must use the SAME
@@ -151,12 +161,12 @@ Root-owned, readable by the service user, never in the repository.
 
 ```ini
 ASPNETCORE_ENVIRONMENT=Production
-ASPNETCORE_URLS=http://127.0.0.1:5001
+ASPNETCORE_URLS=http://127.0.0.1:6200
 SqlServer__ConnectionString=Server=localhost,1433;Database=ClockInXtra;User ID=clockinxtra_api;Password=<api password>;Encrypt=True;TrustServerCertificate=True;Pool Blocking Period=NeverBlock
 DataProtection__KeyRingPath=/var/lib/clockinxtra/keyring
 DataProtection__CertificatePath=/etc/clockinxtra/keyring.pfx
 DataProtection__CertificatePassword=<pfx password>
-AllowedHosts=api.example.com
+AllowedHosts=api.clockinxtra.xwoks.com
 Api__KnownProxies__0=127.0.0.1
 Attestation__Android__ExpectedPackageName=com.altimateware.clockinxtra
 Attestation__Android__RootCertificatePemPath=/etc/clockinxtra/google-attestation-roots.pem
@@ -164,16 +174,16 @@ Attestation__Android__ExpectedSigningCertificateDigests__0=<SHA-256 of your rele
 Database__AutoDeploy=false
 ```
 
-`/etc/clockinxtra/admin.env`:
+`/etc/clockinxtra/backoffice.env`, named by the unit's `EnvironmentFile`:
 
 ```ini
 ASPNETCORE_ENVIRONMENT=Production
-ASPNETCORE_URLS=http://127.0.0.1:5002
+ASPNETCORE_URLS=http://127.0.0.1:6100
 SqlServer__ConnectionString=Server=localhost,1433;Database=ClockInXtra;User ID=clockinxtra_admin;Password=<admin password>;Encrypt=True;TrustServerCertificate=True;Pool Blocking Period=NeverBlock
 DataProtection__KeyRingPath=/var/lib/clockinxtra/keyring
 DataProtection__CertificatePath=/etc/clockinxtra/keyring.pfx
 DataProtection__CertificatePassword=<pfx password>
-AllowedHosts=portal.example.com
+AllowedHosts=clockinxtra.xwoks.com
 Admin__KnownProxies__0=127.0.0.1
 Database__AutoDeploy=false
 ```
@@ -199,6 +209,44 @@ Note `Database__AutoDeploy=false` for the serving hosts and `true` only for the 
 
 ### 3.6 systemd units
 
+**Both unit files already exist** and are correct apart from one line each. Do not replace them; change the assembly they start.
+
+`ExecStart` currently names `ClockInXtra.Api.dll` and `ClockInXtra.BackOffice.dll`, but this solution builds **`Attendance.Api.dll`** and **`Attendance.Admin.dll`**. The project names were never changed to match, and renaming the assemblies would ripple into `WebApplicationFactory`'s content-root discovery and the pre-compiled Razor views, so the unit files are the safer place to reconcile it:
+
+```bash
+sudo sed -i 's#/ClockInXtra\.Api\.dll#/Attendance.Api.dll#' \
+  /etc/systemd/system/clockinxtra-api.service
+sudo sed -i 's#/ClockInXtra\.BackOffice\.dll#/Attendance.Admin.dll#' \
+  /etc/systemd/system/clockinxtra-backoffice.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable clockinxtra-api clockinxtra-backoffice
+```
+
+The deploy workflow asserts both assemblies were published before it uploads anything, so a future rename fails the job with a clear message instead of leaving systemd restarting a missing file every ten seconds.
+
+Everything else in the existing units is already right: `WorkingDirectory` and `ExecStart` under `/var/www/clockinxtra/{api,backoffice}/current`, `ASPNETCORE_URLS` on 6200 and 6100, `EnvironmentFile=/etc/clockinxtra/{api,backoffice}.env`, `User=clockinxtra`, `Restart=always`, and no `Type=` — which defaults to `simple`, and that is the correct choice (see the note below).
+
+<details>
+<summary>Hardening worth adding to both units, optional</summary>
+
+The existing units run without sandboxing. These directives restrict each process to the files it needs, and nothing here requires them:
+
+```ini
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/clockinxtra/keyring /var/www/clockinxtra/api/current/logs
+```
+
+`ReadWritePaths` must name the right application's `logs` directory in each unit, and `ProtectSystem=strict` makes everything else read-only — so test a restart after adding them rather than assuming.
+
+</details>
+
+<details>
+<summary>For reference: what a unit file looks like from scratch</summary>
+
 `/etc/systemd/system/clockinxtra-api.service`:
 
 ```ini
@@ -211,8 +259,8 @@ Wants=network-online.target
 Type=notify
 User=clockinxtra
 Group=clockinxtra
-WorkingDirectory=/opt/clockinxtra/current/api
-ExecStart=/usr/bin/dotnet /opt/clockinxtra/current/api/Attendance.Api.dll
+WorkingDirectory=/var/www/clockinxtra/api/current
+ExecStart=/usr/bin/dotnet /var/www/clockinxtra/api/current/Attendance.Api.dll
 EnvironmentFile=/etc/clockinxtra/api.env
 Restart=on-failure
 RestartSec=5
@@ -224,19 +272,19 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/clockinxtra/keyring /opt/clockinxtra/current/api/logs
+ReadWritePaths=/var/lib/clockinxtra/keyring /var/www/clockinxtra/api/current/logs
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`/etc/systemd/system/clockinxtra-admin.service` is identical with `Attendance.Admin.dll`, `admin.env`, `.../admin` paths and `SyslogIdentifier=clockinxtra-admin`.
+`/etc/systemd/system/clockinxtra-backoffice.service` is identical with `Attendance.Admin.dll`, `backoffice.env`, the `.../backoffice` paths and `SyslogIdentifier=clockinxtra-backoffice`.
+
+</details>
 
 > **Use `Type=simple`, not `Type=notify`.** `notify` requires the process to signal readiness over `sd_notify`, which ASP.NET Core only does when `Microsoft.Extensions.Hosting.Systemd` is referenced and `UseSystemd()` is called. Neither is in place today, so `notify` would make systemd treat every start as a failure and restart in a loop. Adding that package would be a small improvement worth making later; until then the unit files above must say `Type=simple`.
 
 ```bash
-systemctl daemon-reload
-systemctl enable clockinxtra-api clockinxtra-admin
 ```
 
 ### 3.7 Letting the deploy user restart the services
@@ -246,17 +294,17 @@ The workflow runs `sudo systemctl restart` as the SSH user. Grant exactly that a
 `/etc/sudoers.d/clockinxtra-deploy` (via `visudo -f`):
 
 ```
-deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart clockinxtra-api clockinxtra-admin, \
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart clockinxtra-api clockinxtra-backoffice, \
                             /usr/bin/systemctl restart clockinxtra-api, \
-                            /usr/bin/systemctl restart clockinxtra-admin, \
-                            /usr/bin/systemctl status clockinxtra-api clockinxtra-admin
+                            /usr/bin/systemctl restart clockinxtra-backoffice, \
+                            /usr/bin/systemctl status clockinxtra-api clockinxtra-backoffice
 ```
 
-Replace `deploy` with the account named in the `VPS_USER` secret. It needs write access to `/opt/clockinxtra`:
+Replace `deploy` with the account named in the `VPS_USER` secret. It needs write access to both release trees:
 
 ```bash
 usermod -aG clockinxtra deploy
-chmod -R g+w /opt/clockinxtra
+chmod -R g+w /var/www/clockinxtra
 ```
 
 ### 3.8 nginx and TLS
@@ -266,20 +314,20 @@ chmod -R g+w /opt/clockinxtra
 ```nginx
 server {
     listen 80;
-    server_name api.example.com portal.example.com;
+    server_name clockinxtra.xwoks.com api.clockinxtra.xwoks.com;
     location /.well-known/acme-challenge/ { root /var/www/html; }
     location / { return 301 https://$host$request_uri; }
 }
 
 server {
     listen 443 ssl http2;
-    server_name api.example.com;
+    server_name api.clockinxtra.xwoks.com;
 
     # Bodies are small and fixed in shape; the API caps them itself as well.
     client_max_body_size 256k;
 
     location / {
-        proxy_pass http://127.0.0.1:5001;
+        proxy_pass http://127.0.0.1:6200;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -290,11 +338,11 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name portal.example.com;
+    server_name clockinxtra.xwoks.com;
     client_max_body_size 1m;
 
     location / {
-        proxy_pass http://127.0.0.1:5002;
+        proxy_pass http://127.0.0.1:6100;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -307,10 +355,12 @@ server {
 `X-Forwarded-Proto` is not optional. Without it the portal redirects to https, nginx forwards over http again, and the browser loops; and its Secure-only session cookie is never issued.
 
 ```bash
-ln -s /etc/nginx/sites-available/clockinxtra /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
+# This VPS already serves other sites, so nothing else in sites-enabled is
+# touched. Only the clockinxtra ones are ours.
+ln -sfn /etc/nginx/sites-available/clockinxtra /etc/nginx/sites-enabled/clockinxtra
+ln -sfn /etc/nginx/sites-available/clockinxtra-api /etc/nginx/sites-enabled/clockinxtra-api
 apt-get install -y certbot python3-certbot-nginx
-certbot --nginx -d api.example.com -d portal.example.com
+certbot --nginx -d clockinxtra.xwoks.com -d api.clockinxtra.xwoks.com
 nginx -t && systemctl reload nginx
 ```
 
@@ -343,7 +393,7 @@ Also create an **environment** named `production` (Settings → Environments). T
 git tag v1.0.0 && git push origin v1.0.0     # or run "Deploy to VPS" from the Actions tab
 ```
 
-The workflow publishes both hosts, uploads to `/opt/clockinxtra/releases/<timestamp>-<sha>`, deploys the schema with the deployment identity, moves the `current` symlink, restarts both services, and then probes `/health/ready` on each. **If either probe fails it puts the symlink back, restarts, and fails the job**, so a release that does not serve does not stay deployed. The last five releases are kept as rollback targets.
+The workflow publishes both hosts, uploads to `/var/www/clockinxtra/api/releases/<timestamp>-<sha>` and `/var/www/clockinxtra/backoffice/releases/<timestamp>-<sha>`, deploys the schema with the deployment identity, moves **both** `current` symlinks, restarts both services, and then probes `/health/ready` on each. The two symlinks are switched together and rolled back together, so the API and the back office cannot be left on different releases. **If either probe fails it puts the symlink back, restarts, and fails the job**, so a release that does not serve does not stay deployed. The last five releases are kept as rollback targets.
 
 The database step runs **before** the symlink moves, so the schema is in place for the new code while the old code is still serving. That is safe because the scripts are additive and idempotent; a release containing a breaking schema change is not deployable this way and needs a maintenance window.
 
@@ -352,12 +402,12 @@ The database step runs **before** the symlink moves, so the schema is in place f
 The database is created by the first run, but it has no administrator and thirteen business settings are unset, so nothing can sign in and attendance will refuse to operate until both are dealt with:
 
 ```bash
-cd /opt/clockinxtra/current/admin
-set -a; . /etc/clockinxtra/admin.env; set +a
+cd /var/www/clockinxtra/backoffice/current
+set -a; . /etc/clockinxtra/backoffice.env; set +a
 dotnet Attendance.Admin.dll --create-first-administrator
 ```
 
-Then sign in at `https://portal.example.com`, change the password it forced, enrol an authenticator, and decide the settings the deployment listed as unconfigured (above all the business time zone — attendance endpoints answer `ATTENDANCE_NOT_CONFIGURED` until it is set, by design).
+Then sign in at `https://clockinxtra.xwoks.com`, change the password it forced, enrol an authenticator, and decide the settings the deployment listed as unconfigured (above all the business time zone — attendance endpoints answer `ATTENDANCE_NOT_CONFIGURED` until it is set, by design).
 
 ---
 
@@ -366,9 +416,9 @@ Then sign in at `https://portal.example.com`, change the password it forced, enr
 | Task | Command |
 |---|---|
 | Logs | `journalctl -u clockinxtra-api -f` |
-| Status | `systemctl status clockinxtra-api clockinxtra-admin` |
-| Readiness | `curl -s localhost:5001/health/ready \| jq` |
-| Manual rollback | `ln -sfn /opt/clockinxtra/releases/<older> /opt/clockinxtra/current.new && mv -Tf /opt/clockinxtra/current.new /opt/clockinxtra/current && sudo systemctl restart clockinxtra-api clockinxtra-admin` |
+| Status | `systemctl status clockinxtra-api clockinxtra-backoffice` |
+| Readiness | `curl -s localhost:6200/health/ready \| jq` |
+| Manual rollback | For each of `/var/www/clockinxtra/api` and `/var/www/clockinxtra/backoffice`: `ln -sfn $root/releases/<older> $root/current.new && mv -Tf $root/current.new $root/current`, then `sudo systemctl restart clockinxtra-api clockinxtra-backoffice`. Move both, or the two hosts run different releases |
 | Smoke suite (test environments only — it writes rows) | `sqlcmd -S localhost -U sa -C -d ClockInXtra -i database/tests/smoke_attendance.sql` |
 
 **Still not covered here, and still required before production:** database backups and a tested restore (OPEN-19), log retention and shipping, monitoring and alerting on the readiness probes (§61), and the maintenance job schedule that calls the `job.*` purge procedures.
