@@ -475,6 +475,8 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
             await SignInAsync(client, _unprivilegedUser, Password, CurrentCode());
 
             HttpResponseMessage response = await PostAsync(client, "/Employees/Enrol",
+                formIsReachable: false,
+                fields:
             [
                 new("mobileUserId", mobileUserId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 new("userId", employeeUserId),
@@ -738,6 +740,44 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
         Assert.Contains("/Account/Login", dashboard.Headers.Location?.OriginalString ?? string.Empty, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Asserts that a form POST redirected, and reports what the page objected
+    /// to when it did not.
+    /// </summary>
+    /// <remarks>
+    /// A bare <c>Assert.Equal(Redirect, response.StatusCode)</c> says only
+    /// "expected Found, actual OK", which is the least useful thing it could
+    /// say: a re-rendered form means the server rejected something, and the
+    /// reason is in the body. Worth the few lines, because this failure shape
+    /// has cost real time on a machine the tests could not be run on.
+    /// </remarks>
+    private static async Task AssertRedirectedAsync(HttpResponseMessage response, string what)
+    {
+        if (response.StatusCode == HttpStatusCode.Redirect)
+        {
+            return;
+        }
+
+        string body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        string complaints = string.Join(
+            " | ",
+            ValidationComplaint().Matches(body)
+                .Select(match => match.Groups[1].Value.Trim())
+                .Where(text => text.Length > 2)
+                .Distinct(StringComparer.Ordinal));
+
+        Assert.Fail(
+            $"{what} did not redirect: {(int)response.StatusCode} {response.StatusCode}. "
+            + (complaints.Length > 0
+                ? $"The page objected: {complaints}"
+                : $"No validation message in the body. First 600 characters: {body[..Math.Min(600, body.Length)]}"));
+    }
+
+    /// <summary>Validation text the portal renders, for failure messages only.</summary>
+    [GeneratedRegex("""(?:field-validation-error[^>]*>|validation-summary-errors[\s\S]{0,200}?<li>)([^<]{3,300})""")]
+    private static partial Regex ValidationComplaint();
+
     [GeneratedRegex("""name="__RequestVerificationToken"[^>]*value="([^"]+)""")]
     private static partial Regex AntiForgeryToken();
 
@@ -797,12 +837,31 @@ public sealed partial class AuthenticatedPortalTests : IAsyncLifetime
         HttpClient client,
         string path,
         List<KeyValuePair<string, string>> fields,
-        string formPath = "/Employees")
+        string formPath = "/Employees",
+        bool formIsReachable = true)
     {
         HttpResponseMessage page = await client.GetAsync(formPath, TestContext.Current.CancellationToken);
         string html = await page.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         Match token = AntiForgeryToken().Match(html);
+
+        // Previously this posted without a token whenever the match failed, and
+        // the POST was then refused for anti-forgery reasons that had nothing to
+        // do with what the test was checking — several frames from the cause.
+        // A caller that expects the form to render now says so, and finds out
+        // here if it did not.
+        //
+        // formIsReachable: false is for the authorization tests, where the
+        // caller holds no permission, cannot load the form, and the refusal is
+        // the assertion.
+        if (formIsReachable)
+        {
+            Assert.True(
+                token.Success,
+                $"{formPath} carried no anti-forgery token, so the POST to {path} could only have been "
+                + $"refused. It answered {(int)page.StatusCode} {page.StatusCode}, first 400 characters: "
+                + $"{html[..Math.Min(400, html.Length)]}");
+        }
 
         if (token.Success)
         {

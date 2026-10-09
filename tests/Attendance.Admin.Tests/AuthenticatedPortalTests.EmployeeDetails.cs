@@ -118,14 +118,22 @@ public sealed partial class AuthenticatedPortalTests
             string edit = await client.GetStringAsync($"/Employees/Edit/{id}", TestContext.Current.CancellationToken);
             Assert.Matches($@"<option value=""{Regex.Escape(department)}"" selected=""selected"">\s*{Regex.Escape(department)} \(no longer offered\)", edit);
 
+            Match rowVersion = Regex.Match(edit, @"name=""rowVersion"" value=""([^""]+)""");
+
+            // Taken without checking before. An absent row version posts as
+            // empty, which the procedure refuses as a concurrency conflict —
+            // indistinguishable, from the status code alone, from the validation
+            // refusal this test would otherwise be investigating.
+            Assert.True(rowVersion.Success, "the edit form carried no row version");
+
             HttpResponseMessage saved = await PostAsync(client, $"/Employees/Edit/{id}",
-                [new("rowVersion", Regex.Match(edit, @"name=""rowVersion"" value=""([^""]+)""").Groups[1].Value),
+                [new("rowVersion", rowVersion.Groups[1].Value),
                  new("FirstName", "Old"), new("LastName", "Record"), new("EmployeeNumber", $"E-{tag}"),
                  new("Email", "old.record@example.com"), new("PhoneNumber", "08031234567"),
                  new("Department", department), new("JobTitle", jobTitle)],
                 formPath: $"/Employees/Edit/{id}");
 
-            Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+            await AssertRedirectedAsync(saved, $"Saving employee {id} with its withdrawn department");
 
             (string? email, string? phone, string? storedDepartment, string? storedJobTitle) =
                 await QueryAsync<(string?, string?, string?, string?)>(
