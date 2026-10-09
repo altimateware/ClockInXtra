@@ -126,8 +126,12 @@ public sealed partial class AuthenticatedPortalTests
             // refusal this test would otherwise be investigating.
             Assert.True(rowVersion.Success, "the edit form carried no row version");
 
+            // Decoded as a browser would. The attribute holds base64, and Razor
+            // writes a + as &#x2B;, which is not base64 — see AttributeValue.
+            Assert.Equal(8, Convert.FromBase64String(AttributeValue(rowVersion)).Length);
+
             HttpResponseMessage saved = await PostAsync(client, $"/Employees/Edit/{id}",
-                [new("rowVersion", rowVersion.Groups[1].Value),
+                [new("rowVersion", AttributeValue(rowVersion)),
                  new("FirstName", "Old"), new("LastName", "Record"), new("EmployeeNumber", $"E-{tag}"),
                  new("Email", "old.record@example.com"), new("PhoneNumber", "08031234567"),
                  new("Department", department), new("JobTitle", jobTitle)],
