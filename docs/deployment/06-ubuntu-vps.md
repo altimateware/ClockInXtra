@@ -74,17 +74,21 @@ apt-get update && apt-get install -y mssql-server mssql-tools18
 systemctl enable --now mssql-server
 ```
 
-SQL Server must **not** be reachable from the internet:
+SQL Server must **not** be reachable from the internet. On this server that is already the case, verified 2026-10-09:
 
-```bash
-ufw default deny incoming
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
+```text
+Status: active
+Default: deny (incoming), allow (outgoing)
+22/tcp   ALLOW IN   Anywhere
+80/tcp   ALLOW IN   Anywhere
+443/tcp  ALLOW IN   Anywhere
 ```
 
-Port 1433 is deliberately absent. The applications reach it over loopback.
+Port 1433 is deliberately absent, and the applications reach the database over loopback. Note that `sqlservr` does bind `0.0.0.0:1433`, so the listener is open on every interface and it is **only** the firewall standing between the database and the internet. Do not add a 1433 rule, and if the default incoming policy is ever relaxed, bind SQL Server to loopback instead:
+
+```bash
+ufw status verbose          # confirm 1433 is still absent
+```
 
 ### 3.3 Application logins
 
@@ -309,6 +313,13 @@ chmod -R g+w /var/www/clockinxtra
 
 ### 3.8 nginx and TLS
 
+**Both sites already exist and are correct**, verified 2026-10-09: `clockinxtra` proxies to `127.0.0.1:6100`, `clockinxtra-api` to `127.0.0.1:6200`, and both set `Host`, `X-Real-IP`, `X-Forwarded-For` and — the one that matters — `X-Forwarded-Proto $scheme`. Certbot has already added the TLS listeners and the http redirect to each. Nothing below needs doing; it is kept as the reference for what those files must contain.
+
+The only thing absent is `client_max_body_size`, which therefore takes nginx's 1 MB default. That is ample for both applications — the API caps request bodies itself (§22) and the portal posts forms, not files — so it is left alone rather than set for the sake of it.
+
+<details>
+<summary>Reference configuration</summary>
+
 `/etc/nginx/sites-available/clockinxtra`:
 
 ```nginx
@@ -352,19 +363,27 @@ server {
 }
 ```
 
-`X-Forwarded-Proto` is not optional. Without it the portal redirects to https, nginx forwards over http again, and the browser loops; and its Secure-only session cookie is never issued.
+</details>
 
-```bash
-# This VPS already serves other sites, so nothing else in sites-enabled is
-# touched. Only the clockinxtra ones are ours.
-ln -sfn /etc/nginx/sites-available/clockinxtra /etc/nginx/sites-enabled/clockinxtra
-ln -sfn /etc/nginx/sites-available/clockinxtra-api /etc/nginx/sites-enabled/clockinxtra-api
-apt-get install -y certbot python3-certbot-nginx
-certbot --nginx -d clockinxtra.xwoks.com -d api.clockinxtra.xwoks.com
-nginx -t && systemctl reload nginx
+`X-Forwarded-Proto` is not optional. Without it the portal redirects to https, nginx forwards over http again, and the browser loops; and its Secure-only session cookie is never issued. Both existing sites set it, and `Admin:KnownProxies` must list `127.0.0.1` for the portal to act on it.
+
+Both sites are already enabled, and the certificate is already issued. Verified 2026-10-09:
+
+```text
+Certificate Name: clockinxtra.xwoks.com
+  Domains: clockinxtra.xwoks.com api.clockinxtra.xwoks.com
+  Expiry:  2027-01-06 (VALID)
 ```
 
-certbot installs a renewal timer. Verify it with `systemctl list-timers | grep certbot`.
+**One certificate covers both names**, so no further certbot work is needed and the API hostname is not waiting on anything. Renewal is certbot's timer; confirm it with `systemctl list-timers | grep certbot`.
+
+If the sites ever need re-enabling, link only ours — this VPS also serves `marriageregistry` and `onsalesbiz.com`:
+
+```bash
+ln -sfn /etc/nginx/sites-available/clockinxtra /etc/nginx/sites-enabled/clockinxtra
+ln -sfn /etc/nginx/sites-available/clockinxtra-api /etc/nginx/sites-enabled/clockinxtra-api
+nginx -t && systemctl reload nginx
+```
 
 **ASM-01 says the portal is internal-only.** Publishing it to the internet contradicts that assumption; if it must be public, restrict it by source address (`allow`/`deny` in the portal's server block) or put it behind a VPN, and revisit the threat model.
 
