@@ -1,4 +1,4 @@
-package com.contoso.clockinxtra
+package com.altimateware.clockinxtra
 
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
@@ -29,7 +29,7 @@ import java.security.interfaces.ECPublicKey
 class DeviceKeyHandler : MethodChannel.MethodCallHandler {
 
     private companion object {
-        const val KEY_ALIAS = "com.contoso.clockinxtra.device"
+        const val KEY_ALIAS = "com.altimateware.clockinxtra.device"
         const val KEYSTORE = "AndroidKeyStore"
 
         /** An uncompressed P-256 point is 0x04 followed by two 32-byte integers. */

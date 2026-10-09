@@ -30,9 +30,9 @@ internal static class AttestationTestBuilder
     internal const string AttestationOid = "1.3.6.1.4.1.11129.2.1.17";
     internal const string AppleNonceOid = "1.2.840.113635.100.8.2";
 
-    internal const string PackageName = "com.contoso.clockinxtra";
+    internal const string PackageName = "com.altimateware.clockinxtra";
     internal const string TeamId = "ABCDE12345";
-    internal const string BundleId = "com.contoso.clockinxtra";
+    internal const string BundleId = "com.altimateware.clockinxtra";
 
     /// <summary>SHA-256 of a signing certificate, as the options expect it.</summary>
     internal static string SigningDigestHex { get; } = Convert.ToHexString(SHA256.HashData("signing-cert"u8));

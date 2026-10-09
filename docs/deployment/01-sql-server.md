@@ -46,9 +46,9 @@ Logins are **not** created by the scripts, because a SQL login needs a password 
 **Preferred — Windows authentication with group Managed Service Accounts** (no password exists anywhere):
 
 ```sql
-CREATE LOGIN [CONTOSO\gmsa-cix-api$]   FROM WINDOWS;
-CREATE LOGIN [CONTOSO\gmsa-cix-admin$] FROM WINDOWS;
-CREATE LOGIN [CONTOSO\gmsa-cix-jobs$]  FROM WINDOWS;
+CREATE LOGIN [ALTIMATEWARE\gmsa-cix-api$]   FROM WINDOWS;
+CREATE LOGIN [ALTIMATEWARE\gmsa-cix-admin$] FROM WINDOWS;
+CREATE LOGIN [ALTIMATEWARE\gmsa-cix-jobs$]  FROM WINDOWS;
 ```
 
 **Fallback — SQL authentication.** The operator types the password from the organisation's secret store; it goes into the application configuration through the same secret store, never into a file in source control.
@@ -57,7 +57,7 @@ Then apply the grants, naming the three logins:
 
 ```bash
 sqlcmd -S <server> -d ClockInXtra -E -C -b -I ^
-  -v MobileUser="CONTOSO\gmsa-cix-api$" AdminUser="CONTOSO\gmsa-cix-admin$" JobUser="CONTOSO\gmsa-cix-jobs$" ^
+  -v MobileUser="ALTIMATEWARE\gmsa-cix-api$" AdminUser="ALTIMATEWARE\gmsa-cix-admin$" JobUser="ALTIMATEWARE\gmsa-cix-jobs$" ^
   -i security\10_security_users_grants.sql
 ```
 

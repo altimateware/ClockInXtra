@@ -37,7 +37,7 @@ Set on both application pools:
 | `SqlServer__ConnectionString` | `Server=sql01.corp.local;Database=ClockInXtra;Integrated Security=True;Encrypt=True;Pool Blocking Period=NeverBlock` (gMSA), or a SQL login from the secret store. Never `TrustServerCertificate=True` in production. The blocking period is explained below |
 | `DataProtection__KeyRingPath` | `\\keys01\clockinxtra-keyring` — **the same path for the API and the portal** |
 | `DataProtection__CertificateThumbprint` | Thumbprint of the key-encryption certificate |
-| `AllowedHosts` | The site's own host name(s), e.g. `attendance.contoso.com`. The shipped value `*` accepts any `Host` header |
+| `AllowedHosts` | The site's own host name(s), e.g. `attendance.altimateware.com`. The shipped value `*` accepts any `Host` header |
 
 API only:
 
@@ -46,7 +46,7 @@ API only:
 | `Api__KnownProxies__0`, `__1`, … | IP address of each reverse proxy. Forwarded headers are honoured from these addresses only, and never from a wildcard: the request signature covers the host the phone saw, so a spoofable `X-Forwarded-Host` would let a signature verify against something the phone never signed |
 | `Api__RateLimits__*` | Per-minute limits for attendance, registration and read endpoints (defaults 10 / 5 / 60). `Api__RateLimits__WindowSeconds` and `Api__Abuse__WindowSeconds` set the window those limits are counted over; **leave both at 60**, which is what "per minute" means. They exist because the test suite lengthens them so a slow run cannot cross a window boundary mid-test |
 | `Attestation__Android__RootCertificatePemPath` | Google's hardware attestation root certificate(s), downloaded and verified out of band (see `03-android.md` §5) |
-| `Attestation__Android__ExpectedPackageName` | `com.contoso.clockinxtra` (or the organisation's own package name) |
+| `Attestation__Android__ExpectedPackageName` | `com.altimateware.clockinxtra` (or the organisation's own package name) |
 | `Attestation__Android__ExpectedSigningCertificateDigests__0` | SHA-256 of the release signing certificate (see `03-android.md` §3) |
 | `Attestation__Android__RevocationStatusListPath` | Local copy of Google's attestation revocation list, refreshed on a schedule. Until set, revocation is not checked and each accepted registration records that |
 
@@ -109,7 +109,7 @@ The key ring encrypts every TOTP secret. Lose it and every employee and administ
 
 For each application (API on the DMZ-facing nodes, portal on the internal node):
 
-1. **Application pool:** *.NET CLR version* = **No Managed Code**; pipeline *Integrated*; identity = the gMSA (`CONTOSO\gmsa-cix-api$` / `gmsa-cix-admin$`) or a dedicated low-privilege account. One pool per application: they are separate database principals (DB-01).
+1. **Application pool:** *.NET CLR version* = **No Managed Code**; pipeline *Integrated*; identity = the gMSA (`ALTIMATEWARE\gmsa-cix-api$` / `gmsa-cix-admin$`) or a dedicated low-privilege account. One pool per application: they are separate database principals (DB-01).
 2. **Site:** physical path = the published folder; HTTPS binding on 443 with the site certificate; **no HTTP binding** on the API. The portal may keep an HTTP binding only to redirect.
 3. **Folder permissions:** the pool identity needs *Read & execute* on the site folder, and *Modify* on its `logs` folder only.
 4. Recycle the pool after changing environment variables.

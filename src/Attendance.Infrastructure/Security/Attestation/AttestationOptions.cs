@@ -49,7 +49,7 @@ public sealed class AndroidAttestationOptions
 
     /// <summary>
     /// The application package name the attestation must be bound to, for
-    /// example <c>com.contoso.clockinxtra</c>.
+    /// example <c>com.altimateware.clockinxtra</c>.
     /// </summary>
     /// <remarks>
     /// Without this check, an attestation produced by <em>any</em> application on
@@ -123,7 +123,7 @@ public sealed class AppleAttestationOptions
     /// <summary>The Apple team identifier, for example <c>ABCDE12345</c>.</summary>
     public string? TeamId { get; set; }
 
-    /// <summary>The bundle identifier, for example <c>com.contoso.clockinxtra</c>.</summary>
+    /// <summary>The bundle identifier, for example <c>com.altimateware.clockinxtra</c>.</summary>
     public string? BundleId { get; set; }
 
     /// <summary>
