@@ -140,14 +140,24 @@ After the first deployment has created the database, apply least privilege and g
 The security script is **not** in the published output — `dotnet publish` ships assemblies, and the scripts travel inside `Attendance.Infrastructure.dll` as embedded resources, where `sqlcmd` cannot reach them. Get the `database` folder onto the server once, from a checkout:
 
 ```bash
-git clone --depth 1 https://github.com/altimateware/ClockInXtra.git /var/www/clockinxtra/scripts
-cd /var/www/clockinxtra/scripts/database
+# Deliberately OUTSIDE /var/www/clockinxtra. The release trees there are
+# chowned to the deploy account and made group-writable in section 3.7, and a
+# git checkout caught by that recursive chown stops being usable by root:
+# "fatal: detected dubious ownership in repository".
+git clone --depth 1 https://github.com/altimateware/ClockInXtra.git /opt/clockinxtra-scripts
+cd /opt/clockinxtra-scripts/database
 
 sqlcmd -S localhost -U sa -C -d ClockInXtra -b -I -i security/10_security_users_grants.sql \
   -v MobileUser="clockinxtra_api" AdminUser="clockinxtra_admin" JobUser="clockinxtra_jobs"
 ```
 
-Keep that checkout only for the SQL scripts and the smoke suite. The application itself is never run from it.
+Keep that checkout only for the SQL scripts and the smoke suite. The application itself is never run from it, and it is kept out of `/var/www/clockinxtra` so the ownership changes that the release trees need do not reach it.
+
+If it has already been cloned inside that tree and git now refuses to use it, either move it or tell git the directory is expected:
+
+```bash
+sudo git config --global --add safe.directory /var/www/clockinxtra/scripts
+```
 
 ```sql
 USE ClockInXtra;
@@ -516,15 +526,61 @@ The database step runs **before** the symlink moves, so the schema is in place f
 
 The database is created by the first run, but it has no administrator and thirteen business settings are unset, so nothing can sign in and attendance will refuse to operate until both are dealt with:
 
+First install a small wrapper, because the command has to run **as the service
+account** and needs the environment file the services read:
+
 ```bash
+sudo tee /usr/local/sbin/clockinxtra-backoffice >/dev/null <<'EOF'
+#!/bin/bash
+# Runs a portal console command with the environment the service uses.
+# Intended to be invoked as: sudo -u clockinxtra clockinxtra-backoffice <args>
+set -euo pipefail
+
 cd /var/www/clockinxtra/backoffice/current
+
 set -a
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in ''|'#'*) continue ;; esac
   export "${line%%=*}=${line#*=}"
 done < /etc/clockinxtra/backoffice.env
 set +a
-dotnet Attendance.Admin.dll --create-first-administrator
+
+exec dotnet Attendance.Admin.dll "$@"
+EOF
+sudo chmod 755 /usr/local/sbin/clockinxtra-backoffice
+```
+
+Then create the first administrator:
+
+```bash
+sudo -u clockinxtra clockinxtra-backoffice --create-first-administrator
+```
+
+> **Run it as `clockinxtra`, not as yourself and not as root.** Two reasons, and
+> the second is the one that bites.
+>
+> `/etc/clockinxtra/backoffice.env` is `640 root:clockinxtra`, so a login account
+> outside that group gets `Permission denied` reading it.
+>
+> More importantly, this command protects the new authenticator secret with the
+> Data Protection key ring, and **on an empty key ring it creates the first
+> key** — owned by whoever ran it. Run as root, that key file is root-owned and
+> the services, which run as `clockinxtra`, cannot read it: the portal then
+> cannot decrypt the secret it has just written, and sign-in fails with
+> `SECRET_UNREADABLE`. The account would exist and be unusable.
+>
+> If that has already happened, the fix is ownership rather than a new account:
+>
+> ```bash
+> sudo chown -R clockinxtra:clockinxtra /var/lib/clockinxtra/keyring
+> sudo systemctl restart clockinxtra-api clockinxtra-backoffice
+> ```
+
+The same wrapper runs break-glass recovery later, which needs the key ring for
+exactly the same reason:
+
+```bash
+sudo -u clockinxtra clockinxtra-backoffice --reset-administrator <user name>
 ```
 
 > **Do not use `. backoffice.env` to load that file.** systemd reads an

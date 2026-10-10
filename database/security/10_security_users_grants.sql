@@ -114,6 +114,60 @@ GRANT EXECUTE ON SCHEMA::[job]    TO [$(JobUser)];
 GO
 
 /*------------------------------------------------------------------------------
+  The shared internals the application layer calls DIRECTLY.
+
+  Decision DB-01 says core holds "shared internals called only by the mobile,
+  admin and job procedures", and that no application principal holds rights
+  there. That is true of every core procedure but these, and the difference is
+  the application layer, which reaches five of them without a wrapper:
+
+      core.usp_AuthenticationAttempt_Check            lockout state, both hosts
+      core.usp_AuthenticationAttempt_RegisterFailure  lockout counter, both
+      core.usp_AuthenticationAttempt_Reset            cleared on success, both
+      core.usp_SecurityEvent_Create                   security trail, both
+      core.usp_MfaCredential_TryConsumeTimeStep       TOTP replay, API only
+
+  Nested calls are not the problem: a mobile or admin procedure calling a core
+  one is covered by ownership chaining, both being owned by dbo. A call from
+  Dapper is a call by the application principal itself, and without a grant
+  SQL Server denies it.
+
+  The consequence of the omission was total: the first sign-in on the first real
+  deployment failed with "The EXECUTE permission was denied on the object
+  'usp_AuthenticationAttempt_Check'", and the mobile API would have failed
+  identically at the first clock-in, because every one of these sits in the
+  authentication path. It was invisible until then because development connects
+  as the database owner (defect 10 in the implementation status says exactly
+  this about a different object) and the repository tests run that way too.
+
+  Granting these does not weaken the separation the denies below establish.
+  Neither account gains anything in the other's schema, nothing here touches a
+  table, and the DENY on core's tables still stands. They are named one by one
+  rather than granted on the schema, so a core procedure added later is not
+  reachable by an application until someone decides it should be.
+------------------------------------------------------------------------------*/
+GRANT EXECUTE ON OBJECT::[core].[usp_AuthenticationAttempt_Check]
+    TO [$(MobileUser)], [$(AdminUser)];
+GO
+GRANT EXECUTE ON OBJECT::[core].[usp_AuthenticationAttempt_RegisterFailure]
+    TO [$(MobileUser)], [$(AdminUser)];
+GO
+GRANT EXECUTE ON OBJECT::[core].[usp_AuthenticationAttempt_Reset]
+    TO [$(MobileUser)], [$(AdminUser)];
+GO
+GRANT EXECUTE ON OBJECT::[core].[usp_SecurityEvent_Create]
+    TO [$(MobileUser)], [$(AdminUser)];
+GO
+
+/* The API alone: the portal consumes an administrator's time step through
+   admin.usp_Administrator_TryConsumeTimeStep, and an employee's through
+   admin.usp_MfaCredential_Activate. Only the mobile sign-in path reaches the
+   core procedure directly. */
+GRANT EXECUTE ON OBJECT::[core].[usp_MfaCredential_TryConsumeTimeStep]
+    TO [$(MobileUser)];
+GO
+
+/*------------------------------------------------------------------------------
   Explicitly deny everything else, including cross-application procedure
   schemas. A compromised internet-facing API process must not be able to call
   an administrative procedure (threat TH-28).

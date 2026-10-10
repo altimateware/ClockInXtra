@@ -93,6 +93,86 @@ public sealed partial class LeastPrivilegeTests
             "DECLARE @d NVARCHAR(MAX), @r INT; EXEC job.usp_Maintenance_GenerateLedgerDigest @Digest = @d OUTPUT, @ResultCode = @r OUTPUT");
     }
 
+    // ---- The shared internals the application layer calls directly ---------
+
+    /// <summary>
+    /// Every <c>core</c> procedure the application layer calls without a
+    /// wrapper, and which account calls it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Decision DB-01 says <c>core</c> holds shared internals called only by the
+    /// mobile, admin and job procedures. That is true of every core procedure
+    /// but these five, which Dapper reaches directly — and a call from Dapper
+    /// is a call by the application principal itself, not a nested call covered
+    /// by ownership chaining.
+    /// </para>
+    /// <para>
+    /// <b>This list exists because its absence took the first real deployment
+    /// down.</b> The security script granted EXECUTE on the three procedure
+    /// schemas and nothing in core, so the first sign-in failed with "The
+    /// EXECUTE permission was denied on the object
+    /// 'usp_AuthenticationAttempt_Check'", and the mobile API would have failed
+    /// the same way at the first clock-in: all five sit in the authentication
+    /// path. Nothing caught it because development connects as the database
+    /// owner, and the repository tests run that way too — the same blind spot
+    /// defect 10 records for a different object.
+    /// </para>
+    /// <para>
+    /// Keep it in step with the code. The direct calls are the ones this finds:
+    /// <c>grep -rhoE &apos;"core\.[A-Za-z_]+"&apos; src/ --include=*.cs</c>.
+    /// </para>
+    /// </remarks>
+    public static TheoryData<string, bool, bool> SharedInternals() => new()
+    {
+        // procedure, the API needs it, the portal needs it
+        { "core.usp_AuthenticationAttempt_Check", true, true },
+        { "core.usp_AuthenticationAttempt_RegisterFailure", true, true },
+        { "core.usp_AuthenticationAttempt_Reset", true, true },
+        { "core.usp_SecurityEvent_Create", true, true },
+
+        // The portal consumes an administrator's time step through
+        // admin.usp_Administrator_TryConsumeTimeStep and an employee's through
+        // admin.usp_MfaCredential_Activate, so only the API reaches this one.
+        { "core.usp_MfaCredential_TryConsumeTimeStep", true, false },
+    };
+
+    [Theory]
+    [MemberData(nameof(SharedInternals))]
+    public async Task EachAccountCanExecuteExactlyTheSharedInternalsItCalls(
+        string procedure, bool apiNeedsIt, bool portalNeedsIt)
+    {
+        await using Scope scope = await Scope.BeginAsync(_connectionString);
+
+        Assert.Equal(apiNeedsIt, await CanExecuteAsync(scope, scope.MobileUser, procedure));
+        Assert.Equal(portalNeedsIt, await CanExecuteAsync(scope, scope.AdminUser, procedure));
+
+        // The maintenance account calls core only from inside its own
+        // procedures, where ownership chaining covers it.
+        Assert.False(await CanExecuteAsync(scope, scope.JobUser, procedure));
+    }
+
+    /// <summary>
+    /// Whether a user holds EXECUTE on a procedure, asked as that user.
+    /// </summary>
+    /// <remarks>
+    /// <c>HAS_PERMS_BY_NAME</c> rather than running the procedure: the question
+    /// is whether the grant exists, and answering it this way needs no valid
+    /// parameters and writes nothing.
+    /// </remarks>
+    private static async Task<bool> CanExecuteAsync(Scope scope, string user, string procedure)
+    {
+        int granted = 0;
+
+        await scope.AsAsync(user, async connection =>
+            granted = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT HAS_PERMS_BY_NAME(@procedure, 'OBJECT', 'EXECUTE')",
+                new { procedure },
+                scope.Transaction)));
+
+        return granted == 1;
+    }
+
     // ---- The internet-facing API account -----------------------------------
 
     [Fact]
