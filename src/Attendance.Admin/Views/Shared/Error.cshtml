@@ -1,25 +1,33 @@
-﻿@model ErrorViewModel
+@model ErrorViewModel
 @{
-    ViewData["Title"] = "Error";
+    ViewData["Title"] = "Something went wrong";
 }
 
-<h1 class="text-danger">Error.</h1>
-<h2 class="text-danger">An error occurred while processing your request.</h2>
+<h1>Something went wrong</h1>
+
+<p>
+    The portal could not complete that request. Nothing was changed by the
+    attempt that failed.
+</p>
 
 @if (Model.ShowRequestId)
 {
     <p>
-        <strong>Request ID:</strong> <code>@Model.RequestId</code>
+        If you report this, quote the reference below. It identifies the failure
+        in the server log.
     </p>
+
+    <p><strong>Reference:</strong> <code>@Model.RequestId</code></p>
 }
 
-<h3>Development Mode</h3>
-<p>
-    Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
-</p>
-<p>
-    <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
-    It can result in displaying sensitive information from exceptions to end users.
-    For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
-    and restarting the app.
-</p>
+<p><a href="/">Return to the dashboard</a></p>
+
+@*
+    Deliberately says nothing about the failure itself. The template this file
+    replaced printed advice to "swap to the Development environment to display
+    more detailed information about the error", which tells whoever hit the page
+    how to make the server disclose more, and reads as a developer note to an
+    employee. Claude.md §34 keeps stack traces, SQL errors, class names and
+    infrastructure detail off the response; the reference above is how the two
+    ends are joined instead.
+*@

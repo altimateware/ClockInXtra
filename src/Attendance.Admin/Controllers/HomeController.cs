@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Authorization;
+using Attendance.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Attendance.Admin.Controllers;
@@ -24,14 +25,4 @@ public sealed class HomeController : Controller
         {
             RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
         });
-}
-
-/// <summary>What the error page shows.</summary>
-public sealed class ErrorViewModel
-{
-    /// <summary>The request identifier, for support to correlate with the log.</summary>
-    public string? RequestId { get; init; }
-
-    /// <summary>Whether there is an identifier worth showing.</summary>
-    public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 }
