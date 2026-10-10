@@ -334,6 +334,14 @@ deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart clockinxtra-api clockinxt
                             /usr/bin/systemctl status clockinxtra-api clockinxtra-backoffice
 ```
 
+The deploy account also needs to **read the journal**, or a failed deployment cannot report why. Reading another unit's journal requires membership of `systemd-journal`; without it `journalctl` prints `-- No entries --` and the rollback tells you nothing:
+
+```bash
+usermod -aG systemd-journal deploy
+```
+
+That is read-only access to the system journal. If your policy forbids it, the workflow says so when it cannot read the journal and prints the `sudo journalctl` command to run by hand instead.
+
 Replace `deploy` with the account named in the `VPS_USER` secret. It needs write access to both release trees:
 
 ```bash

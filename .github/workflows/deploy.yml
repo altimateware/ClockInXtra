@@ -221,7 +221,23 @@ jobs:
 
           echo "A host did not become ready. Rolling back."
           systemctl --no-pager status clockinxtra-api clockinxtra-backoffice || true
-          journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 60 --no-pager || true
+
+          # The journal is where the reason is: both hosts log to stdout and
+          # systemd captures it. Reading another unit's journal needs membership
+          # of systemd-journal or adm — without it journalctl prints
+          # "-- No entries --" and a hint, which is what the first failed
+          # deployment got, so the rollback reported nothing useful. See
+          # docs/deployment/06-ubuntu-vps.md section 3.7.
+          if journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 80 --no-pager 2>/dev/null \
+               | grep -q .; then
+            journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 80 --no-pager
+          else
+            echo "::error::Could not read the journal, so the reason for the failure is not shown here."
+            echo "Add the deploy account to the systemd-journal group:"
+            echo "    sudo usermod -aG systemd-journal $(id -un)"
+            echo "Until then, read it on the server with:"
+            echo "    sudo journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 80 --no-pager"
+          fi
 
           rolled=0
           for root in "$API_ROOT" "$ADMIN_ROOT"; do
