@@ -25,14 +25,14 @@ class _ClockInXtraAppState extends ConsumerState<ClockInXtraApp> {
   void initState() {
     super.initState();
 
-    // Back in the foreground: the whole startup sequence runs again. The
-    // employee may have walked away from the office, a device may have been
-    // approved or revoked, or the day may have ticked over while the app sat in
-    // the background. What was on screen before is not evidence of any of it
-    // (§11, §65). A run already in progress — the location permission dialog
-    // itself sends the app to the background briefly — is joined, not repeated.
+    // Back in the foreground: the controller decides what that means. Normally
+    // the whole startup sequence runs again (§11, §65); while the registration
+    // form is on screen it deliberately does not, because reading the
+    // authenticator code means leaving this app and the form must survive the
+    // trip. A run already in progress — the location permission dialog itself
+    // sends the app to the background briefly — is joined, not repeated.
     _lifecycle = AppLifecycleListener(
-      onResume: () => ref.read(startupControllerProvider.notifier).restart(),
+      onResume: () => ref.read(startupControllerProvider.notifier).resume(),
     );
   }
 

@@ -263,6 +263,37 @@ void main() {
     });
   });
 
+  group('returning to the foreground', () {
+    test('runs the sequence again, because the employee may have moved', () async {
+      final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1', userId: 'e.adeyemi'));
+      final StartupController controller = harness.container.read(startupControllerProvider.notifier);
+
+      await controller.restart();
+      await controller.resume();
+
+      expect(harness.api.calls.where((String call) => call == 'validateLocation'), hasLength(2));
+    });
+
+    test('leaves the registration form alone, because the code comes from another app', () async {
+      // Registering needs a six-digit code from an authenticator, so leaving
+      // this app is a step in the flow rather than an accident. A restart here
+      // takes the form off screen and discards the user ID, password and code
+      // already typed — the employee comes back to an empty form holding a code
+      // that expires while they retype the rest.
+      final Harness harness = Harness();
+      final StartupController controller = harness.container.read(startupControllerProvider.notifier);
+
+      await controller.restart();
+      expectType<StartupNeedsRegistration>(harness.container.read(startupControllerProvider));
+
+      final int before = harness.api.calls.length;
+      await controller.resume();
+
+      expect(harness.api.calls, hasLength(before));
+      expectType<StartupNeedsRegistration>(harness.container.read(startupControllerProvider));
+    });
+  });
+
   test('joins a run already in progress instead of starting another', () async {
     // The location permission dialog sends the app to the background and back;
     // that resume must not start a second sequence racing the first.

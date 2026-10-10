@@ -53,6 +53,35 @@ final class StartupController extends Notifier<StartupState> {
   /// sequences can never race to set the state.
   Future<void> restart() => _running ??= _sequence(mayRepeat: true).whenComplete(() => _running = null);
 
+  /// What the app does when it returns to the foreground.
+  ///
+  /// Normally the whole sequence again: the employee may have walked away from
+  /// the office, the device may have been approved or revoked, or the attendance
+  /// day may have ticked over while the app sat in the background, and what was
+  /// on screen before is evidence of none of it (§11, §65).
+  ///
+  /// **The registration form is the one exception.** Registering requires a
+  /// six-digit code from an authenticator app, so leaving this app is not an
+  /// accident to recover from — it is a step in the flow we asked for. Restarting
+  /// here takes [StartupNeedsRegistration] off screen, which disposes the form
+  /// and silently discards the user ID, password and code already typed; the
+  /// employee returns with a code in their head and an empty form, and the code
+  /// expires while they retype the rest.
+  ///
+  /// Skipping the refresh costs nothing that matters, because registration does
+  /// not depend on the location verdict: the request carries credentials, the
+  /// authenticator code and a hardware-attested key, and the server decides on
+  /// those alone. Location is enforced where it is actually load-bearing — at
+  /// clock-in and clock-out, every time, server-side. The sequence runs in full
+  /// the moment registration finishes, so nothing here is left stale.
+  Future<void> resume() async {
+    if (state is StartupNeedsRegistration) {
+      return;
+    }
+
+    await restart();
+  }
+
   /// Shows attendance the server has just reported, such as the response to a
   /// clock-in.
   ///
