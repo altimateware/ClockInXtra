@@ -142,9 +142,24 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "ADMIN_ROOT='$ADMIN_ROOT' RELEASE='$RELEASE' bash -se" <<'REMOTE'
           set -euo pipefail
-          set -a
-          . /etc/clockinxtra/deploy.env
-          set +a
+          # systemd reads an EnvironmentFile as literal KEY=VALUE lines. Sourcing
+          # it with the shell is not the same thing: a connection string
+          # contains semicolons, so ". deploy.env" splits
+          # "...;User ID=clockinxtra_deploy;..." into separate commands and
+          # fails with "User: command not found". This reads the file rather
+          # than executing it, splits on the first = only, and never evaluates
+          # a value, so semicolons, spaces and $ survive intact. Surrounding
+          # quotes are stripped the way systemd strips them.
+          while IFS= read -r line || [ -n "$line" ]; do
+            case "$line" in ''|'#'*) continue ;; esac
+            key=${line%%=*}
+            value=${line#*=}
+            case "$value" in
+              '"'*'"') value=${value#\"}; value=${value%\"} ;;
+              "'"*"'") value=${value#\'}; value=${value%\'} ;;
+            esac
+            export "$key=$value"
+          done < /etc/clockinxtra/deploy.env
           cd "$ADMIN_ROOT/releases/$RELEASE"
           exec dotnet Attendance.Admin.dll --deploy-database
           REMOTE
