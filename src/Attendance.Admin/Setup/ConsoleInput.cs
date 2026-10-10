@@ -10,10 +10,38 @@ namespace Attendance.Admin.Setup;
 internal static class ConsoleInput
 {
     /// <summary>Reads a line of ordinary input.</summary>
-    public static string Prompt(string label)
+    /// <param name="label">What is being asked for.</param>
+    /// <param name="hint">
+    /// What makes an answer acceptable, shown under the label. Worth stating for
+    /// anything with a rule the operator cannot guess: a minimum length, or that
+    /// a blank is allowed.
+    /// </param>
+    /// <remarks>
+    /// The label goes on its own line and the cursor sits after a short marker,
+    /// so a session that has just printed startup logs still shows plainly what
+    /// is being asked. Each prompt is flushed before the read, because an inline
+    /// write with no newline can sit in a buffer and leave an operator facing a
+    /// cursor with no question attached to it.
+    /// </remarks>
+    public static string Prompt(string label, string? hint = null)
     {
-        Console.Write($"{label}: ");
+        WriteLabel(label, hint);
         return Console.ReadLine()?.Trim() ?? string.Empty;
+    }
+
+    /// <summary>Writes a prompt and leaves the cursor ready for the answer.</summary>
+    private static void WriteLabel(string label, string? hint)
+    {
+        Console.WriteLine();
+        Console.WriteLine(label);
+
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            Console.WriteLine($"  ({hint})");
+        }
+
+        Console.Write("  > ");
+        Console.Out.Flush();
     }
 
     /// <summary>Reads a value without echoing it.</summary>
@@ -33,18 +61,22 @@ internal static class ConsoleInput
     /// in the deployment log. Piped input does none of those.
     /// </para>
     /// </remarks>
-    public static string PromptSecret(string label)
+    public static string PromptSecret(string label, string? hint = null)
     {
         if (Console.IsInputRedirected)
         {
-            Console.WriteLine(
-                $"{label}: (input is redirected — it will not be hidden, and the account " +
-                "must change its password at first sign-in)");
+            // Console.ReadKey throws when input is redirected, which would make
+            // these commands unusable in exactly the situations a deployment
+            // meets them. The fallback says out loud that the value is visible.
+            WriteLabel(
+                label,
+                "input is redirected, so this will NOT be hidden"
+                    + (hint is null ? string.Empty : $"; {hint}"));
 
             return Console.ReadLine()?.Trim() ?? string.Empty;
         }
 
-        Console.Write($"{label}: ");
+        WriteLabel(label, hint is null ? "not shown as you type" : $"not shown as you type; {hint}");
 
         StringBuilder value = new();
 

@@ -34,6 +34,12 @@ public static class FirstAdministratorSetup
     /// <summary>The argument that selects this command.</summary>
     public const string Argument = "--create-first-administrator";
 
+    /// <summary>
+    /// The shortest password accepted for this account. Stated at the prompt as
+    /// well as enforced, so the rule is known before it is typed twice.
+    /// </summary>
+    private const int MinimumPasswordLength = 12;
+
     /// <summary>Runs the setup command.</summary>
     /// <returns>A process exit code: 0 on success.</returns>
     public static async Task<int> RunAsync(IServiceProvider services, CancellationToken cancellationToken)
@@ -47,12 +53,22 @@ public static class FirstAdministratorSetup
         Console.WriteLine("records who created it.");
         Console.WriteLine();
 
-        string userName = ConsoleInput.Prompt("User name");
-        string displayName = ConsoleInput.Prompt("Display name");
-        string email = ConsoleInput.Prompt("Email (optional)");
+        // Numbered, and each rule stated where it is asked rather than only
+        // enforced afterwards: being told the password was too short after
+        // typing it twice is a poor way to learn the rule.
+        string userName = ConsoleInput.Prompt(
+            "Step 1 of 5 — user name", "what you will sign in with, up to 64 characters");
 
-        string password = ConsoleInput.PromptSecret("Password");
-        string confirmation = ConsoleInput.PromptSecret("Confirm password");
+        string displayName = ConsoleInput.Prompt(
+            "Step 2 of 5 — display name", "shown in the portal, up to 160 characters");
+
+        string email = ConsoleInput.Prompt(
+            "Step 3 of 5 — email", "optional; press Enter to leave it unset");
+
+        string password = ConsoleInput.PromptSecret(
+            "Step 4 of 5 — password", $"at least {MinimumPasswordLength} characters");
+
+        string confirmation = ConsoleInput.PromptSecret("Step 5 of 5 — confirm the password");
 
         if (!string.Equals(password, confirmation, StringComparison.Ordinal))
         {
@@ -60,11 +76,13 @@ public static class FirstAdministratorSetup
             return 2;
         }
 
-        if (password.Length < 12)
+        if (password.Length < MinimumPasswordLength)
         {
             // A deliberate floor rather than a policy engine: this account holds
             // every permission in the system from the moment it exists.
-            Console.Error.WriteLine("Use at least 12 characters for the first administrator. Nothing was created.");
+            Console.Error.WriteLine(
+                $"Use at least {MinimumPasswordLength} characters for the first administrator. "
+                + "Nothing was created.");
             return 2;
         }
 
