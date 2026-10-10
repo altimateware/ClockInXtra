@@ -121,6 +121,28 @@ void main() {
       expect(blocked.correlationId, '9f0c');
       expect(harness.api.calls, <String>['validateLocation']);
     });
+
+    test('keeps the three location refusals apart, because the remedies differ', () async {
+      // Collapsing them into one reason is how an employee standing in their
+      // own office came to be told they were not at an approved office, when
+      // the phone's fix was simply too vague to judge (§65).
+      const Map<String, StartupBlockReason> expected = <String, StartupBlockReason>{
+        'LOCATION_NOT_ALLOWED': StartupBlockReason.locationRejected,
+        'LOCATION_ACCURACY_INSUFFICIENT': StartupBlockReason.locationAccuracyInsufficient,
+        'LOCATION_SOURCE_UNTRUSTED': StartupBlockReason.locationSourceUntrusted,
+      };
+
+      for (final MapEntry<String, StartupBlockReason> entry in expected.entries) {
+        final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1'))
+          ..api.onValidateLocation = () async =>
+              throw ApiException(code: entry.key, message: 'refused', statusCode: 403);
+
+        final StartupBlocked blocked = expectType<StartupBlocked>(await run(harness));
+
+        expect(blocked.reason, entry.value, reason: entry.key);
+        expect(blocked.canRetry, isTrue, reason: entry.key);
+      }
+    });
   });
 
   test('reports an unreachable server as retryable, never as a result', () async {
@@ -260,6 +282,37 @@ void main() {
       final StartupBlocked blocked = expectType<StartupBlocked>(await run(harness));
 
       expect(blocked.reason, StartupBlockReason.attendanceNotConfigured);
+    });
+  });
+
+  group('returning to the foreground', () {
+    test('runs the sequence again, because the employee may have moved', () async {
+      final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1', userId: 'e.adeyemi'));
+      final StartupController controller = harness.container.read(startupControllerProvider.notifier);
+
+      await controller.restart();
+      await controller.resume();
+
+      expect(harness.api.calls.where((String call) => call == 'validateLocation'), hasLength(2));
+    });
+
+    test('leaves the registration form alone, because the code comes from another app', () async {
+      // Registering needs a six-digit code from an authenticator, so leaving
+      // this app is a step in the flow rather than an accident. A restart here
+      // takes the form off screen and discards the user ID, password and code
+      // already typed — the employee comes back to an empty form holding a code
+      // that expires while they retype the rest.
+      final Harness harness = Harness();
+      final StartupController controller = harness.container.read(startupControllerProvider.notifier);
+
+      await controller.restart();
+      expectType<StartupNeedsRegistration>(harness.container.read(startupControllerProvider));
+
+      final int before = harness.api.calls.length;
+      await controller.resume();
+
+      expect(harness.api.calls, hasLength(before));
+      expectType<StartupNeedsRegistration>(harness.container.read(startupControllerProvider));
     });
   });
 

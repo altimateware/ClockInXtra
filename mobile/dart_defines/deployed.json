@@ -1,0 +1,25 @@
+{
+  "//": [
+    "Build-time configuration for the deployed environment.",
+    "",
+    "Pass it with --dart-define-from-file, which Android Studio takes in a run",
+    "configuration's 'Additional run args' and the command line takes directly:",
+    "",
+    "    flutter run --dart-define-from-file=dart_defines/deployed.json",
+    "    flutter build apk --release --dart-define-from-file=dart_defines/deployed.json",
+    "",
+    "Committed deliberately. Claude.md section 47 forbids hard-coding",
+    "configuration and forbids committing secrets; an API address is the first",
+    "and not the second. Nothing secret belongs in this file.",
+    "",
+    "The scheme must be https. ApiEnvironment refuses cleartext outright in a",
+    "release build, and in a debug build only with a second, explicit define.",
+    "",
+    "The host must be what the server sees in the Host header: the request",
+    "signature covers @authority, and the server rebuilds it from the header it",
+    "received. nginx is configured with proxy_set_header Host $host, so the two",
+    "agree. A proxy that rewrote Host would break every signature."
+  ],
+
+  "CLOCKINXTRA_API_BASE_URL": "https://api.clockinxtra.xwoks.com"
+}

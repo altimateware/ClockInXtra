@@ -86,6 +86,39 @@ void main() {
       expect(message.body, contains('appear'));
     });
 
+    test('a vague fix is not reported as being in the wrong place', () {
+      // The defect this replaces: an employee standing in their own office was
+      // told "Not at an approved office" because the phone's fix was ±35 m, and
+      // spent the next half hour adjusting the office's coordinates. The place
+      // was never the problem; the measurement was.
+      final StartupMessage message =
+          describeBlock(const StartupBlocked(StartupBlockReason.locationAccuracyInsufficient));
+
+      expect(message.title, isNot(contains('approved office')));
+      expect(message.title.toLowerCase(), contains('precise'));
+      expect(message.body.toLowerCase(), contains('outside'));
+    });
+
+    test('a simulated location says what to switch off', () {
+      final StartupMessage message =
+          describeBlock(const StartupBlocked(StartupBlockReason.locationSourceUntrusted));
+
+      expect(message.title, isNot(contains('approved office')));
+      expect(message.body.toLowerCase(), contains('mock-location'));
+    });
+
+    test('each location refusal reads differently from the others', () {
+      // They arrive as three distinct codes from the server and have three
+      // different remedies: move, wait for a better fix, or turn off a spoofer.
+      final Set<String> titles = <StartupBlockReason>{
+        StartupBlockReason.locationRejected,
+        StartupBlockReason.locationAccuracyInsufficient,
+        StartupBlockReason.locationSourceUntrusted,
+      }.map((StartupBlockReason reason) => describeBlock(StartupBlocked(reason)).title).toSet();
+
+      expect(titles, hasLength(3));
+    });
+
     test('summarises a completed day with the server’s times and duration', () {
       final AttendanceSummary summary = summarise(snapshot(AttendanceState.completed));
 

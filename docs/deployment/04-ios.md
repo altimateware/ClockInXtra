@@ -30,7 +30,7 @@ Without the native channels, the integrity check reports *unavailable* and the s
 
 ```bash
 cd mobile
-flutter build ipa --release --dart-define=CLOCKINXTRA_API_BASE_URL=https://attendance.altimateware.com
+flutter build ipa --release --dart-define-from-file=dart_defines/deployed.json
 ```
 
 Distribution is an organisation decision: Apple Business Manager with the organisation's MDM, or the Apple Developer Enterprise Program where the organisation qualifies. iOS apps cannot be sideloaded freely as Android APKs can.
