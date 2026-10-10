@@ -35,6 +35,7 @@ class StartupScreen extends ConsumerWidget {
           StartupBlocked() => _Blocked(
               blocked: state,
               onRetry: controller.restart,
+              onRegisterAgain: controller.registerAgain,
               onOpenSettings: () => ref
                   .read(locationServiceProvider)
                   .openSettingsFor(state.locationReadiness ?? LocationReadiness.deniedForever),
@@ -67,10 +68,16 @@ class _Progress extends StatelessWidget {
 }
 
 class _Blocked extends StatelessWidget {
-  const _Blocked({required this.blocked, required this.onRetry, required this.onOpenSettings});
+  const _Blocked({
+    required this.blocked,
+    required this.onRetry,
+    required this.onRegisterAgain,
+    required this.onOpenSettings,
+  });
 
   final StartupBlocked blocked;
   final VoidCallback onRetry;
+  final VoidCallback onRegisterAgain;
   final VoidCallback onOpenSettings;
 
   @override
@@ -95,6 +102,14 @@ class _Blocked extends StatelessWidget {
         const SizedBox(height: 24),
         if (blocked.canOpenSettings)
           FilledButton(onPressed: onOpenSettings, child: const Text('Open settings')),
+        // The only action that can work when the key no longer matches. It is
+        // the prominent button because it is the whole way out, and it sits
+        // where 'Try again' would be, which here would only loop.
+        if (blocked.canRegisterAgain)
+          FilledButton(
+            onPressed: onRegisterAgain,
+            child: const Text('Register this phone again'),
+          ),
         if (blocked.canRetry)
           OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
       ],

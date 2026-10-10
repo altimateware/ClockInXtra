@@ -105,6 +105,12 @@ StartupMessage describeBlock(StartupBlocked blocked) => switch (blocked.reason) 
               ? 'An administrator has revoked this device. Please contact your administrator.'
               : 'An administrator has revoked this device: ${blocked.serverMessage}',
         ),
+      StartupBlockReason.deviceIdentityUnusable => const StartupMessage(
+          'This phone can no longer prove who it is',
+          'Its security key no longer matches the one registered, so the service will not accept '
+              'anything it sends. Register this phone again below. An administrator has to approve '
+              'the new registration before you can clock in, and your recorded attendance is unaffected.',
+        ),
       StartupBlockReason.employeeInactive => const StartupMessage(
           'Your account is not active',
           'Please contact your administrator.',

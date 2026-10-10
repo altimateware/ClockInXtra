@@ -13,6 +13,7 @@ namespace Attendance.Infrastructure.Persistence.Repositories;
 public sealed class DeviceAdministrationRepository : IDeviceAdministrationRepository
 {
     private const string GetPendingProcedure = "admin.usp_Device_GetPendingApprovals";
+    private const string GetRegisteredProcedure = "admin.usp_Device_GetRegistered";
     private const string ApproveProcedure = "admin.usp_Device_Approve";
     private const string RevokeProcedure = "admin.usp_Device_Revoke";
     private const string ResultCodeParameter = "@ResultCode";
@@ -59,6 +60,46 @@ public sealed class DeviceAdministrationRepository : IDeviceAdministrationReposi
                 row.CurrentActiveDeviceModel,
                 row.CurrentActiveDeviceLastSeenUtc.ToUtcOffset(),
                 row.RecentFailedAttempts)),
+        ];
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RegisteredDevice>> GetRegisteredAsync(
+        DeviceStatus? status,
+        CancellationToken cancellationToken)
+    {
+        DynamicParameters parameters = new();
+        parameters.Add("@Status", status is null ? null : (byte)status.Value, DbType.Byte);
+        parameters.Add(ResultCodeParameter, dbType: DbType.Int32, direction: ParameterDirection.Output);
+
+        await using SqlConnectionLease lease =
+            await _connectionFactory.LeaseAsync(cancellationToken).ConfigureAwait(false);
+
+        IEnumerable<RegisteredRow> rows = await lease.Connection
+            .QueryAsync<RegisteredRow>(lease.StoredProcedure(
+                GetRegisteredProcedure, parameters, _connectionFactory.CommandTimeoutSeconds, cancellationToken))
+            .ConfigureAwait(false);
+
+        return
+        [
+            .. rows.Select(row => new RegisteredDevice(
+                row.DeviceId,
+                row.DevicePublicId,
+                row.RowVersion,
+                (DeviceStatus)row.Status,
+                (DevicePlatform)row.Platform,
+                (AttestationLevel)row.AttestationLevel,
+                row.DeviceModel,
+                row.OsVersion,
+                row.AppVersion,
+                row.RegisteredUtc.ToUtcOffset(),
+                row.ApprovedUtc.ToUtcOffset(),
+                row.LastSeenUtc.ToUtcOffset(),
+                row.RevokedUtc.ToUtcOffset(),
+                row.RevokedReason,
+                row.UserId,
+                $"{row.FirstName} {row.LastName}".Trim(),
+                row.Department)),
         ];
     }
 
@@ -144,6 +185,28 @@ public sealed class DeviceAdministrationRepository : IDeviceAdministrationReposi
         public string? CurrentActiveDeviceModel { get; init; }
         public DateTime? CurrentActiveDeviceLastSeenUtc { get; init; }
         public int RecentFailedAttempts { get; init; }
+    }
+
+    private sealed class RegisteredRow
+    {
+        public int DeviceId { get; init; }
+        public Guid DevicePublicId { get; init; }
+        public byte[] RowVersion { get; init; } = [];
+        public byte Status { get; init; }
+        public byte Platform { get; init; }
+        public byte AttestationLevel { get; init; }
+        public string? DeviceModel { get; init; }
+        public string? OsVersion { get; init; }
+        public string? AppVersion { get; init; }
+        public DateTime RegisteredUtc { get; init; }
+        public DateTime? ApprovedUtc { get; init; }
+        public DateTime? LastSeenUtc { get; init; }
+        public DateTime? RevokedUtc { get; init; }
+        public string? RevokedReason { get; init; }
+        public string UserId { get; init; } = string.Empty;
+        public string FirstName { get; init; } = string.Empty;
+        public string LastName { get; init; } = string.Empty;
+        public string? Department { get; init; }
     }
 }
 

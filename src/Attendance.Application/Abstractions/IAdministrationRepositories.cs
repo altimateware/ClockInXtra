@@ -17,6 +17,23 @@ public interface IDeviceAdministrationRepository
     /// <summary>Lists registrations awaiting approval, with decision context.</summary>
     Task<IReadOnlyList<PendingDeviceApproval>> GetPendingApprovalsAsync(CancellationToken cancellationToken);
 
+    /// <summary>Lists registered devices, whatever their status.</summary>
+    /// <param name="status">
+    /// A single <see cref="DeviceStatus"/> to show, or <see langword="null"/> for
+    /// all of them.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <remarks>
+    /// Separate from <see cref="GetPendingApprovalsAsync"/>, which answers only
+    /// "what is waiting for a decision". Without this, an <b>active</b> device
+    /// could not be revoked at all — the action and the procedure existed, but
+    /// no screen could reach one — so a lost handset could be cut off only by
+    /// enrolling its replacement first.
+    /// </remarks>
+    Task<IReadOnlyList<RegisteredDevice>> GetRegisteredAsync(
+        DeviceStatus? status,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// Approves a registration, revoking the employee's previous device in the
     /// same transaction.
@@ -84,6 +101,51 @@ public readonly record struct PendingDeviceApproval(
     string? CurrentActiveDeviceModel,
     DateTimeOffset? CurrentActiveDeviceLastSeenUtc,
     int RecentFailedAttempts);
+
+/// <summary>
+/// A registered device as the portal's device list shows it.
+/// </summary>
+/// <param name="DeviceId">Internal identifier.</param>
+/// <param name="DevicePublicId">External identifier; the signature's key id.</param>
+/// <param name="RowVersion">Concurrency token; revocation refuses a stale one.</param>
+/// <param name="Status">Pending approval, active or revoked.</param>
+/// <param name="Platform">Android or iOS.</param>
+/// <param name="AttestationLevel">How strongly the key was attested.</param>
+/// <param name="DeviceModel">Untrusted client metadata.</param>
+/// <param name="OsVersion">Untrusted client metadata.</param>
+/// <param name="AppVersion">Untrusted client metadata.</param>
+/// <param name="RegisteredUtc">When the employee registered it.</param>
+/// <param name="ApprovedUtc">When an administrator approved it, if ever.</param>
+/// <param name="LastSeenUtc">
+/// The last request this device signed. It is how an administrator tells a
+/// handset in daily use from one abandoned months ago, which is the difference
+/// between revoking carefully and revoking freely.
+/// </param>
+/// <param name="RevokedUtc">When it was revoked, if it was.</param>
+/// <param name="RevokedReason">
+/// The reason given, which is also what the employee is shown in the app.
+/// </param>
+/// <param name="UserId">The employee's sign-in identifier.</param>
+/// <param name="EmployeeName">Their name, for recognition.</param>
+/// <param name="Department">Their department, where recorded.</param>
+public readonly record struct RegisteredDevice(
+    int DeviceId,
+    Guid DevicePublicId,
+    byte[] RowVersion,
+    DeviceStatus Status,
+    DevicePlatform Platform,
+    AttestationLevel AttestationLevel,
+    string? DeviceModel,
+    string? OsVersion,
+    string? AppVersion,
+    DateTimeOffset RegisteredUtc,
+    DateTimeOffset? ApprovedUtc,
+    DateTimeOffset? LastSeenUtc,
+    DateTimeOffset? RevokedUtc,
+    string? RevokedReason,
+    string UserId,
+    string EmployeeName,
+    string? Department);
 
 /// <summary>The outcome of an approval.</summary>
 /// <param name="ResultCode">The procedure's outcome.</param>

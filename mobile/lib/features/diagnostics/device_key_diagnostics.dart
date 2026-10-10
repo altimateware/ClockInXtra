@@ -36,10 +36,18 @@ class _DeviceKeyDiagnosticsPageState extends State<DeviceKeyDiagnosticsPage> {
   void initState() {
     super.initState();
 
-    // Runs on its own as well as on the button, so the results reach the console
-    // of whoever launched the app. Driving a button from a headless run is
-    // awkward, and these findings are the whole point of the screen.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _run());
+    // Reports what is already here. It does NOT generate anything.
+    //
+    // It used to call _run() straight away, which generates a key — and
+    // generating replaces the registered one, because the private key cannot
+    // leave the secure element and a second cannot be kept beside it. So merely
+    // opening this tab silently un-registered the handset, and the damage was
+    // not recoverable from the phone: every later request failed
+    // SIGNATURE_INVALID, and registering again is refused with
+    // ACTIVE_DEVICE_EXISTS until an administrator revokes the device. A
+    // diagnostic that breaks the thing it is diagnosing, with no prompt, is a
+    // trap however loudly the screen is labelled debug.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _inspect());
   }
 
   @override
@@ -91,7 +99,67 @@ class _DeviceKeyDiagnosticsPageState extends State<DeviceKeyDiagnosticsPage> {
     );
   }
 
+  /// Reports the current key without touching it.
+  Future<void> _inspect() async {
+    final bool existed = await widget.keyService.hasKey();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _steps
+        ..clear()
+        ..add(_Step(
+          'Key already present',
+          true,
+          existed
+              ? 'yes — running the checks below REPLACES it and un-registers this phone'
+              : 'no — running the checks below is safe',
+        ));
+    });
+  }
+
   Future<void> _run() async {
+    // Destroying a registered key is a decision, so it is asked for once and in
+    // the words of its consequence, not hidden behind "Run checks".
+    if (await widget.keyService.hasKey()) {
+      if (!mounted) {
+        return;
+      }
+
+      final bool confirmed = await showDialog<bool>(
+            context: context,
+            builder: (BuildContext context) => AlertDialog(
+              title: const Text('Replace the registered key?'),
+              content: const Text(
+                'This phone holds a device key. Running the checks generates a new one, '
+                'which destroys it: the phone stops being able to sign requests, and '
+                'registering again is refused until an administrator revokes this device.',
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Replace the key'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
       _running = true;
       _steps.clear();

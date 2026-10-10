@@ -230,6 +230,63 @@ void main() {
       expect(harness.api.calls, isNot(contains('userStatus')));
     });
 
+    test('offers a way out when the server will not accept what this phone signs', () async {
+      // The trap this replaces: the key in secure hardware stopped matching the
+      // registered one, every request came back UNAUTHORIZED, and because that
+      // is not DEVICE_NOT_REGISTERED the app kept the stored identifier and
+      // retried for ever. The only escape was clearing the app's data through
+      // the system settings.
+      final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1', userId: 'e.adeyemi'))
+        ..api.onValidateLocation = () async => throw const ApiException(
+              code: 'UNAUTHORIZED',
+              message: 'The request could not be authenticated.',
+              statusCode: 401,
+            );
+
+      final StartupBlocked blocked = expectType<StartupBlocked>(await run(harness));
+
+      expect(blocked.reason, StartupBlockReason.deviceIdentityUnusable);
+      expect(blocked.canRegisterAgain, isTrue);
+      // Retrying would sign the same request with the same unusable key.
+      expect(blocked.canRetry, isFalse);
+    });
+
+    test('registering again discards the identifier and asks to register', () async {
+      final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1', userId: 'e.adeyemi'))
+        ..api.onValidateLocation = () async => throw const ApiException(
+              code: 'UNAUTHORIZED',
+              message: 'The request could not be authenticated.',
+              statusCode: 401,
+            );
+
+      final StartupController controller = harness.container.read(startupControllerProvider.notifier);
+      await controller.restart();
+
+      // The refusal was for a signed request; an unregistered phone does not
+      // sign one, so the next run gets past it.
+      harness.api.onValidateLocation = () async => const LocationValidation(success: true, officeLocationId: null);
+
+      await controller.registerAgain();
+
+      expectType<StartupNeedsRegistration>(harness.container.read(startupControllerProvider));
+    });
+
+    test('an unauthenticated refusal before registration discards nothing', () async {
+      // No device is stored yet, so UNAUTHORIZED here is something ordinary
+      // going wrong — not a reason to tell someone their phone is unusable.
+      final Harness harness = Harness()
+        ..api.onValidateLocation = () async => throw const ApiException(
+              code: 'UNAUTHORIZED',
+              message: 'The request could not be authenticated.',
+              statusCode: 401,
+            );
+
+      final StartupBlocked blocked = expectType<StartupBlocked>(await run(harness));
+
+      expect(blocked.reason, isNot(StartupBlockReason.deviceIdentityUnusable));
+      expect(blocked.canRegisterAgain, isFalse);
+    });
+
     test('forgets a device the server no longer knows, and starts again once', () async {
       final Harness harness = Harness(store: FakeStore(devicePublicId: 'gone', userId: 'e.adeyemi'));
       int attempts = 0;
@@ -294,6 +351,29 @@ void main() {
       await controller.resume();
 
       expect(harness.api.calls.where((String call) => call == 'validateLocation'), hasLength(2));
+    });
+
+    test('leaves a half-typed clock-in alone, and refreshes again once it is gone', () async {
+      // Clock-in needs an authenticator code too, so the same trip out of the
+      // app applies — and losing the form there is worse, because the code
+      // expires while the password is retyped.
+      final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1', userId: 'e.adeyemi'));
+      final StartupController controller = harness.container.read(startupControllerProvider.notifier);
+
+      await controller.restart();
+      final int afterFirst = harness.api.calls.length;
+
+      controller.setCredentialDraft(true);
+      await controller.resume();
+
+      expect(harness.api.calls, hasLength(afterFirst));
+
+      // Submitted or abandoned: the next resume behaves normally again, so a
+      // stuck flag cannot leave the app never re-checking anything.
+      controller.setCredentialDraft(false);
+      await controller.resume();
+
+      expect(harness.api.calls.length, greaterThan(afterFirst));
     });
 
     test('leaves the registration form alone, because the code comes from another app', () async {

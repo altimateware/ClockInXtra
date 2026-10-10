@@ -43,6 +43,37 @@ public sealed class DevicesController : Controller
         return View(pending);
     }
 
+    /// <summary>Lists registered devices, so one already in service can be revoked.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this action exists.</b> <see cref="Revoke"/>, its permission and
+    /// <c>admin.usp_Device_Revoke</c> were all here, but the only list was
+    /// <see cref="Pending"/> — so no screen could reach a device that was not
+    /// awaiting approval, and an <b>active</b> one could not be revoked at all.
+    /// The sole route was approving a replacement, which revokes the previous
+    /// device as a side effect. For a lost or stolen handset that is backwards:
+    /// it has to be cut off now, not after the employee has enrolled another.
+    /// </para>
+    /// </remarks>
+    [HttpGet]
+    [Authorize(Permissions.DeviceView)]
+    public async Task<IActionResult> Index(byte? status, CancellationToken cancellationToken)
+    {
+        // An unknown filter is a malformed URL, not a reason to show everything:
+        // silently widening a filter is how somebody revokes the wrong device.
+        if (status is not null && !Enum.IsDefined(typeof(DeviceStatus), (int)status.Value))
+        {
+            return BadRequest();
+        }
+
+        IReadOnlyList<RegisteredDevice> devices =
+            await _devices.GetRegisteredAsync((DeviceStatus?)status, cancellationToken);
+
+        ViewData["StatusFilter"] = status;
+
+        return View(devices);
+    }
+
     /// <summary>Approves a registration.</summary>
     /// <remarks>
     /// The row version travels with the form. If the device changed since the
@@ -92,12 +123,20 @@ public sealed class DevicesController : Controller
         int deviceId,
         string rowVersion,
         string reason,
+        string? returnTo,
         CancellationToken cancellationToken)
     {
+        // Back to the list the form was submitted from. Only these two names are
+        // honoured — a return address taken from a request is an open redirect
+        // unless it is matched against a list the application chose.
+        string destination = string.Equals(returnTo, nameof(Index), StringComparison.Ordinal)
+            ? nameof(Index)
+            : nameof(Pending);
+
         if (!TryDecodeRowVersion(rowVersion, out byte[] token))
         {
             TempData["Error"] = "That request was not valid. Please reload the list and try again.";
-            return RedirectToAction(nameof(Pending));
+            return RedirectToAction(destination);
         }
 
         if (string.IsNullOrWhiteSpace(reason))
@@ -105,7 +144,7 @@ public sealed class DevicesController : Controller
             // The reason is shown to the employee whose device stopped working.
             // A blank one leaves them with an app that fails and no explanation.
             TempData["Error"] = "Give a reason: it is shown to the employee whose device this is.";
-            return RedirectToAction(nameof(Pending));
+            return RedirectToAction(destination);
         }
 
         AttendanceResultCode result = await _devices.RevokeAsync(
@@ -116,7 +155,7 @@ public sealed class DevicesController : Controller
                 ? "Device revoked. It will stop working immediately."
                 : "The device could not be revoked.";
 
-        return RedirectToAction(nameof(Pending));
+        return RedirectToAction(destination);
     }
 
     private int CurrentAdministratorId() =>
