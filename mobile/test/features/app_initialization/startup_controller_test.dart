@@ -121,6 +121,28 @@ void main() {
       expect(blocked.correlationId, '9f0c');
       expect(harness.api.calls, <String>['validateLocation']);
     });
+
+    test('keeps the three location refusals apart, because the remedies differ', () async {
+      // Collapsing them into one reason is how an employee standing in their
+      // own office came to be told they were not at an approved office, when
+      // the phone's fix was simply too vague to judge (§65).
+      const Map<String, StartupBlockReason> expected = <String, StartupBlockReason>{
+        'LOCATION_NOT_ALLOWED': StartupBlockReason.locationRejected,
+        'LOCATION_ACCURACY_INSUFFICIENT': StartupBlockReason.locationAccuracyInsufficient,
+        'LOCATION_SOURCE_UNTRUSTED': StartupBlockReason.locationSourceUntrusted,
+      };
+
+      for (final MapEntry<String, StartupBlockReason> entry in expected.entries) {
+        final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1'))
+          ..api.onValidateLocation = () async =>
+              throw ApiException(code: entry.key, message: 'refused', statusCode: 403);
+
+        final StartupBlocked blocked = expectType<StartupBlocked>(await run(harness));
+
+        expect(blocked.reason, entry.value, reason: entry.key);
+        expect(blocked.canRetry, isTrue, reason: entry.key);
+      }
+    });
   });
 
   test('reports an unreachable server as retryable, never as a result', () async {

@@ -112,8 +112,19 @@ enum StartupBlockReason {
   /// No position fix could be obtained in time.
   noLocationFix,
 
-  /// The server did not accept the position (§9).
+  /// The server did not accept the position: it was outside every office (§9).
   locationRejected,
+
+  /// The position was precise enough to report but too vague to judge.
+  ///
+  /// Distinct from [locationRejected] because the remedy is the opposite. The
+  /// phone may be standing in the office; what failed is the measurement, not
+  /// the place, and telling the employee they are "not at an approved office"
+  /// sends them to argue about coordinates when they need a better fix (§65).
+  locationAccuracyInsufficient,
+
+  /// The platform flagged the position as mock or simulated (§26, CON-07).
+  locationSourceUntrusted,
 
   /// The device's clock is too far from the server's for a signature to verify.
   clockSkew,

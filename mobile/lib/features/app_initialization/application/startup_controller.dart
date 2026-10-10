@@ -281,10 +281,13 @@ final class StartupController extends Notifier<StartupState> {
     }
 
     final StartupBlockReason reason = switch (error.code) {
-      'LOCATION_NOT_ALLOWED' ||
-      'LOCATION_ACCURACY_INSUFFICIENT' ||
-      'LOCATION_SOURCE_UNTRUSTED' =>
-        StartupBlockReason.locationRejected,
+      // Three different problems with three different remedies, so three
+      // different reasons. Folding them together told an employee standing in
+      // their own office that they were "not at an approved office" when the
+      // truth was that the phone's fix was too vague to judge.
+      'LOCATION_NOT_ALLOWED' => StartupBlockReason.locationRejected,
+      'LOCATION_ACCURACY_INSUFFICIENT' => StartupBlockReason.locationAccuracyInsufficient,
+      'LOCATION_SOURCE_UNTRUSTED' => StartupBlockReason.locationSourceUntrusted,
       'CLOCK_SKEW' => StartupBlockReason.clockSkew,
       'APP_VERSION_UNSUPPORTED' => StartupBlockReason.appVersionUnsupported,
       'ATTENDANCE_NOT_CONFIGURED' => StartupBlockReason.attendanceNotConfigured,

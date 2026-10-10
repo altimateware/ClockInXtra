@@ -75,6 +75,22 @@ StartupMessage describeBlock(StartupBlocked blocked) => switch (blocked.reason) 
           'Not at an approved office',
           blocked.serverMessage ?? 'You do not appear to be at an approved office location.',
         ),
+      // Not the same as being in the wrong place, and must not read like it.
+      // The phone may well be standing in the office; what the server refused
+      // was a measurement too vague to judge against it. Consumer GPS is often
+      // worse than the configured radius indoors (§65), so this is an ordinary
+      // condition with an ordinary remedy, not an accusation.
+      StartupBlockReason.locationAccuracyInsufficient => const StartupMessage(
+          'Your location is not precise enough',
+          'Your phone cannot tell where it is closely enough to check it against your office. '
+              'Move near a window or step outside, wait a few seconds, then try again. '
+              'If it keeps happening here, your administrator can review the accuracy setting.',
+        ),
+      StartupBlockReason.locationSourceUntrusted => const StartupMessage(
+          'This location could not be trusted',
+          'Your phone reported a simulated location. Turn off any mock-location or GPS-spoofing app, '
+              'including one selected under developer options, then try again.',
+        ),
       StartupBlockReason.clockSkew => const StartupMessage(
           'This phone’s clock is wrong',
           'Set the date and time to update automatically, then try again.',
