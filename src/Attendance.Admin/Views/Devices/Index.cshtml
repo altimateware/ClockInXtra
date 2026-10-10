@@ -1,0 +1,122 @@
+@using Attendance.Application.Abstractions
+@model IReadOnlyList<Attendance.Application.Abstractions.RegisteredDevice>
+@{
+    ViewData["Title"] = "Devices";
+
+    byte? filter = ViewData["StatusFilter"] as byte?;
+
+    string Moment(DateTimeOffset? value) => value is null
+        ? "—"
+        : value.Value.ToString("u", System.Globalization.CultureInfo.InvariantCulture);
+}
+
+<h1>Devices</h1>
+
+@if (TempData["Message"] is string message)
+{
+    <p class="message">@message</p>
+}
+@if (TempData["Error"] is string error)
+{
+    <p class="warning">@error</p>
+}
+
+<p>
+    Every registered handset. Revoking one stops it recording attendance
+    immediately and permanently — a revoked device never becomes usable again,
+    and the employee has to register a replacement, which an administrator then
+    approves.
+</p>
+
+<nav class="filters">
+    <a asp-action="Index">All</a>
+    <a asp-action="Index" asp-route-status="0">Awaiting approval</a>
+    <a asp-action="Index" asp-route-status="1">Active</a>
+    <a asp-action="Index" asp-route-status="2">Revoked</a>
+    @if (filter is not null)
+    {
+        <span>Showing one status only.</span>
+    }
+</nav>
+
+@if (Model.Count == 0)
+{
+    <p>No devices match.</p>
+}
+else
+{
+    foreach (RegisteredDevice device in Model)
+    {
+        <section class="device">
+            <h2>@device.EmployeeName (@device.UserId)</h2>
+
+            <dl>
+                <dt>Status</dt>
+                <dd>
+                    @switch (device.Status)
+                    {
+                        case DeviceStatus.Active:
+                            <span class="badge">Active</span>
+                            break;
+                        case DeviceStatus.PendingApproval:
+                            <span class="badge">Awaiting approval</span>
+                            break;
+                        default:
+                            <span class="badge">Revoked</span>
+                            break;
+                    }
+                </dd>
+
+                <dt>Device</dt>
+                <dd>@(device.DeviceModel ?? "not reported") — @device.Platform, @(device.OsVersion ?? "unknown OS"), app @(device.AppVersion ?? "unknown")</dd>
+
+                @* Evidence, not decoration: a level of None means the server could
+                   not verify the key lives in device hardware. *@
+                <dt>Attestation</dt>
+                <dd>@device.AttestationLevel</dd>
+
+                <dt>Registered</dt>
+                <dd>@Moment(device.RegisteredUtc)</dd>
+
+                <dt>Approved</dt>
+                <dd>@Moment(device.ApprovedUtc)</dd>
+
+                @* The difference between revoking carefully and revoking freely:
+                   a handset used this morning is somebody's working phone. *@
+                <dt>Last used</dt>
+                <dd>@Moment(device.LastSeenUtc)</dd>
+
+                @if (device.Status == DeviceStatus.Revoked)
+                {
+                    <dt>Revoked</dt>
+                    <dd>@Moment(device.RevokedUtc) — @(device.RevokedReason ?? "no reason recorded")</dd>
+                }
+
+                <dt>Department</dt>
+                <dd>@(device.Department ?? "—")</dd>
+            </dl>
+
+            @if (device.Status == DeviceStatus.Revoked)
+            {
+                <p>This device is revoked. There is nothing further to do with it.</p>
+            }
+            else
+            {
+                @* The row version travels with the form. If the device changed
+                   since this page was rendered — revoked by a colleague, or
+                   approved — the procedure refuses rather than acting on a
+                   stale view. *@
+                <form method="post" asp-action="Revoke">
+                    <input type="hidden" name="deviceId" value="@device.DeviceId" />
+                    <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(device.RowVersion)" />
+                    <input type="hidden" name="returnTo" value="Index" />
+                    <label for="reason-@device.DeviceId">
+                        Reason — shown to the employee in the app
+                    </label>
+                    <input id="reason-@device.DeviceId" name="reason" maxlength="256" required />
+                    <button type="submit">Revoke this device</button>
+                </form>
+            }
+        </section>
+    }
+}

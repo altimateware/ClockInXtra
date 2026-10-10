@@ -75,10 +75,16 @@ final class StartupBlocked extends StartupState {
         StartupBlockReason.notConfigured ||
         StartupBlockReason.appVersionUnsupported ||
         StartupBlockReason.deviceRevoked ||
-        StartupBlockReason.employeeInactive =>
+        StartupBlockReason.employeeInactive ||
+        // Retrying signs the same request with the same unusable key. Offering
+        // the button would be offering a loop.
+        StartupBlockReason.deviceIdentityUnusable =>
           false,
         _ => true,
       };
+
+  /// Whether the only way forward is to discard this registration and start over.
+  bool get canRegisterAgain => reason == StartupBlockReason.deviceIdentityUnusable;
 
   /// Whether a system settings screen can fix it.
   bool get canOpenSettings =>
@@ -134,6 +140,15 @@ enum StartupBlockReason {
 
   /// The device was revoked by an administrator.
   deviceRevoked,
+
+  /// The server will not accept what this phone signs.
+  ///
+  /// The private key lives in secure hardware and cannot be recovered, so a key
+  /// that no longer matches the one registered is final: every signed request
+  /// is refused, and nothing the app retries will change that. The only way
+  /// out is to register again, which is why this reason carries its own action
+  /// rather than a try-again button that cannot work.
+  deviceIdentityUnusable,
 
   /// The employee's account is not active.
   employeeInactive,

@@ -60,6 +60,27 @@ final class StartupController extends Notifier<StartupState> {
   /// told — only whether [resume] throws the form away.
   bool _credentialDraft = false;
 
+  /// Whether this run found a device identifier in secure storage.
+  bool _hasStoredDevice = false;
+
+  /// Discards this registration and starts again as an unregistered phone.
+  ///
+  /// Offered only for [StartupBlockReason.deviceIdentityUnusable], where the
+  /// phone can no longer prove which device it is. Without it the employee's
+  /// only route was clearing the app's data through the system settings — a
+  /// detour nobody should need, and one that reads like "reinstall it and hope".
+  ///
+  /// Deliberately a decision rather than something the app does on its own: a
+  /// new registration has to be approved by an administrator before attendance
+  /// works again, so discarding one is not a step to take quietly on the
+  /// employee's behalf.
+  Future<void> registerAgain() async {
+    await ref.read(secureStoreProvider).clear();
+    _hasStoredDevice = false;
+
+    await restart();
+  }
+
   /// Records whether a credential form currently holds anything typed.
   ///
   /// Clock-in needs a six-digit code from an authenticator app, so the employee
@@ -149,6 +170,10 @@ final class StartupController extends Notifier<StartupState> {
     }
 
     final String? devicePublicId = await store.readDevicePublicId();
+
+    // Read by _blockedBy: a refusal to authenticate means something very
+    // different before registration than after it.
+    _hasStoredDevice = devicePublicId != null;
 
     // 3. Location permission, then a fix.
     state = const StartupInProgress(StartupStep.checkingLocationPermission);
@@ -296,7 +321,7 @@ final class StartupController extends Notifier<StartupState> {
     }
   }
 
-  static StartupBlocked _blockedBy(ApiException error) {
+  StartupBlocked _blockedBy(ApiException error) {
     if (error.isTransport) {
       return StartupBlocked(StartupBlockReason.serviceUnreachable, serverMessage: error.message);
     }
@@ -309,6 +334,13 @@ final class StartupController extends Notifier<StartupState> {
       'LOCATION_NOT_ALLOWED' => StartupBlockReason.locationRejected,
       'LOCATION_ACCURACY_INSUFFICIENT' => StartupBlockReason.locationAccuracyInsufficient,
       'LOCATION_SOURCE_UNTRUSTED' => StartupBlockReason.locationSourceUntrusted,
+      // The server would not authenticate a request this phone signed. After
+      // registration that means the key no longer matches the one on record —
+      // it cannot be read back out of secure hardware to check, and it cannot
+      // be restored, so retrying is futile and the app must offer the only
+      // thing that works. Before registration the same code means something
+      // ordinary went wrong, and nothing should be discarded over it.
+      'UNAUTHORIZED' when _hasStoredDevice => StartupBlockReason.deviceIdentityUnusable,
       'CLOCK_SKEW' => StartupBlockReason.clockSkew,
       'APP_VERSION_UNSUPPORTED' => StartupBlockReason.appVersionUnsupported,
       'ATTENDANCE_NOT_CONFIGURED' => StartupBlockReason.attendanceNotConfigured,

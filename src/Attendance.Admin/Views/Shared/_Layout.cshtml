@@ -55,7 +55,11 @@
                     }
                     @if (Has(Permissions.DeviceView))
                     {
-                        <a asp-controller="Devices" asp-action="Pending" aria-current="@Current("Devices")">Devices</a>
+                        @* The full list, not just what is awaiting a decision: the
+                           pending page was the only entry point, which left an
+                           active device unreachable and so unrevokable. *@
+                        <a asp-controller="Devices" asp-action="Index" aria-current="@Current("Devices")">Devices</a>
+                        <a asp-controller="Devices" asp-action="Pending">Awaiting approval</a>
                     }
                     @if (Has(Permissions.AdministratorView))
                     {
