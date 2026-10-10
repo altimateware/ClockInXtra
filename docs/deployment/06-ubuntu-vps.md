@@ -516,15 +516,61 @@ The database step runs **before** the symlink moves, so the schema is in place f
 
 The database is created by the first run, but it has no administrator and thirteen business settings are unset, so nothing can sign in and attendance will refuse to operate until both are dealt with:
 
+First install a small wrapper, because the command has to run **as the service
+account** and needs the environment file the services read:
+
 ```bash
+sudo tee /usr/local/sbin/clockinxtra-backoffice >/dev/null <<'EOF'
+#!/bin/bash
+# Runs a portal console command with the environment the service uses.
+# Intended to be invoked as: sudo -u clockinxtra clockinxtra-backoffice <args>
+set -euo pipefail
+
 cd /var/www/clockinxtra/backoffice/current
+
 set -a
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in ''|'#'*) continue ;; esac
   export "${line%%=*}=${line#*=}"
 done < /etc/clockinxtra/backoffice.env
 set +a
-dotnet Attendance.Admin.dll --create-first-administrator
+
+exec dotnet Attendance.Admin.dll "$@"
+EOF
+sudo chmod 755 /usr/local/sbin/clockinxtra-backoffice
+```
+
+Then create the first administrator:
+
+```bash
+sudo -u clockinxtra clockinxtra-backoffice --create-first-administrator
+```
+
+> **Run it as `clockinxtra`, not as yourself and not as root.** Two reasons, and
+> the second is the one that bites.
+>
+> `/etc/clockinxtra/backoffice.env` is `640 root:clockinxtra`, so a login account
+> outside that group gets `Permission denied` reading it.
+>
+> More importantly, this command protects the new authenticator secret with the
+> Data Protection key ring, and **on an empty key ring it creates the first
+> key** — owned by whoever ran it. Run as root, that key file is root-owned and
+> the services, which run as `clockinxtra`, cannot read it: the portal then
+> cannot decrypt the secret it has just written, and sign-in fails with
+> `SECRET_UNREADABLE`. The account would exist and be unusable.
+>
+> If that has already happened, the fix is ownership rather than a new account:
+>
+> ```bash
+> sudo chown -R clockinxtra:clockinxtra /var/lib/clockinxtra/keyring
+> sudo systemctl restart clockinxtra-api clockinxtra-backoffice
+> ```
+
+The same wrapper runs break-glass recovery later, which needs the key ring for
+exactly the same reason:
+
+```bash
+sudo -u clockinxtra clockinxtra-backoffice --reset-administrator <user name>
 ```
 
 > **Do not use `. backoffice.env` to load that file.** systemd reads an
