@@ -452,9 +452,21 @@ The database is created by the first run, but it has no administrator and thirte
 
 ```bash
 cd /var/www/clockinxtra/backoffice/current
-set -a; . /etc/clockinxtra/backoffice.env; set +a
+set -a
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in ''|'#'*) continue ;; esac
+  export "${line%%=*}=${line#*=}"
+done < /etc/clockinxtra/backoffice.env
+set +a
 dotnet Attendance.Admin.dll --create-first-administrator
 ```
+
+> **Do not use `. backoffice.env` to load that file.** systemd reads an
+> `EnvironmentFile` as literal `KEY=VALUE` lines; the shell does not. A
+> connection string contains semicolons, so sourcing it splits
+> `...;User ID=clockinxtra_admin;...` into separate commands and fails with
+> `User: command not found`. The loop above reads the file rather than
+> executing it, splitting on the first `=` only.
 
 Then sign in at `https://clockinxtra.xwoks.com`, change the password it forced, enrol an authenticator, and decide the settings the deployment listed as unconfigured (above all the business time zone — attendance endpoints answer `ATTENDANCE_NOT_CONFIGURED` until it is set, by design).
 
