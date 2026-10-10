@@ -334,6 +334,14 @@ deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart clockinxtra-api clockinxt
                             /usr/bin/systemctl status clockinxtra-api clockinxtra-backoffice
 ```
 
+The deploy account also needs to **read the journal**, or a failed deployment cannot report why. Reading another unit's journal requires membership of `systemd-journal`; without it `journalctl` prints `-- No entries --` and the rollback tells you nothing:
+
+```bash
+usermod -aG systemd-journal deploy
+```
+
+That is read-only access to the system journal. If your policy forbids it, the workflow says so when it cannot read the journal and prints the `sudo journalctl` command to run by hand instead.
+
 Replace `deploy` with the account named in the `VPS_USER` secret. It needs write access to both release trees:
 
 ```bash
@@ -478,7 +486,7 @@ Then sign in at `https://clockinxtra.xwoks.com`, change the password it forced, 
 |---|---|
 | Logs | `journalctl -u clockinxtra-api -f` |
 | Status | `systemctl status clockinxtra-api clockinxtra-backoffice` |
-| Readiness | `curl -s localhost:6200/health/ready \| jq` |
+| Readiness | `curl -s -H 'Host: api.clockinxtra.xwoks.com' localhost:6200/health/ready \| jq`. **The Host header is required**: `AllowedHosts` is the public name, so a request arriving as `localhost` is refused with 400 before it reaches a route |
 | Manual rollback | For each of `/var/www/clockinxtra/api` and `/var/www/clockinxtra/backoffice`: `ln -sfn $root/releases/<older> $root/current.new && mv -Tf $root/current.new $root/current`, then `sudo systemctl restart clockinxtra-api clockinxtra-backoffice`. Move both, or the two hosts run different releases |
 | Smoke suite (test environments only — it writes rows) | `sqlcmd -S localhost -U sa -C -d ClockInXtra -i database/tests/smoke_attendance.sql` |
 

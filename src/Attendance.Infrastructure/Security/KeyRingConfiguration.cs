@@ -254,8 +254,10 @@ public static class KeyRingConfiguration
         {
             // Deliberately echoes neither the password nor the file contents.
             throw new InvalidOperationException(
-                $"Data Protection certificate file '{path}' could not be read. Check that it is PKCS#12 " +
-                "and that DataProtection:CertificatePassword is correct.", exception);
+                $"Data Protection certificate file '{path}' could not be read. Check that it is PKCS#12 "
+                + "and that DataProtection:CertificatePassword matches it. To test the password without "
+                + "putting it in shell history: PFXPASS=... openssl pkcs12 -in "
+                + $"'{path}' -nokeys -noout -passin env:PFXPASS", exception);
         }
 
         if (!certificate.HasPrivateKey)

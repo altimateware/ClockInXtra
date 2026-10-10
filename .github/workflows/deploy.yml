@@ -59,6 +59,13 @@ jobs:
       API_HEALTH: http://127.0.0.1:6200/health/ready
       ADMIN_HEALTH: http://127.0.0.1:6100/health/ready
 
+      # Each host filters by name: AllowedHosts is the public host name, so a
+      # request arriving as 127.0.0.1 is refused with 400 before it reaches a
+      # route. The probe therefore claims the name nginx would send, which also
+      # means the probe exercises host filtering rather than bypassing it.
+      API_HOST: api.clockinxtra.xwoks.com
+      ADMIN_HOST: clockinxtra.xwoks.com
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -198,30 +205,52 @@ jobs:
           USER: ${{ secrets.VPS_USER }}
           PORT: ${{ secrets.VPS_PORT || '22' }}
         run: |
-          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "API_ROOT='$API_ROOT' ADMIN_ROOT='$ADMIN_ROOT' API_HEALTH='$API_HEALTH' ADMIN_HEALTH='$ADMIN_HEALTH' bash -se" <<'REMOTE'
+          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "API_ROOT='$API_ROOT' ADMIN_ROOT='$ADMIN_ROOT' API_HEALTH='$API_HEALTH' ADMIN_HEALTH='$ADMIN_HEALTH' API_HOST='$API_HOST' ADMIN_HOST='$ADMIN_HOST' bash -se" <<'REMOTE'
           set -uo pipefail
 
+          # $1 the loopback url, $2 the host name to claim. Without the Host
+          # header the request is refused with 400 by host filtering, which is
+          # the application working as configured rather than a fault.
           probe() {
             for _ in $(seq 1 30); do
-              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$1" || true)"
+              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H "Host: $2" "$1" || true)"
               if [ "$code" = "200" ]; then
-                echo "  $1 -> 200"
+                echo "  $1 (Host: $2) -> 200"
                 return 0
               fi
               sleep 2
             done
-            echo "  $1 -> $code"
+            echo "  $1 (Host: $2) -> $code"
+            if [ "$code" = "400" ]; then
+              echo "  400 here usually means AllowedHosts does not include $2."
+            fi
             return 1
           }
 
-          if probe "$API_HEALTH" && probe "$ADMIN_HEALTH"; then
+          if probe "$API_HEALTH" "$API_HOST" && probe "$ADMIN_HEALTH" "$ADMIN_HOST"; then
             echo "Both hosts are serving."
             exit 0
           fi
 
           echo "A host did not become ready. Rolling back."
           systemctl --no-pager status clockinxtra-api clockinxtra-backoffice || true
-          journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 60 --no-pager || true
+
+          # The journal is where the reason is: both hosts log to stdout and
+          # systemd captures it. Reading another unit's journal needs membership
+          # of systemd-journal or adm — without it journalctl prints
+          # "-- No entries --" and a hint, which is what the first failed
+          # deployment got, so the rollback reported nothing useful. See
+          # docs/deployment/06-ubuntu-vps.md section 3.7.
+          if journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 80 --no-pager 2>/dev/null \
+               | grep -q .; then
+            journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 80 --no-pager
+          else
+            echo "::error::Could not read the journal, so the reason for the failure is not shown here."
+            echo "Add the deploy account to the systemd-journal group:"
+            echo "    sudo usermod -aG systemd-journal $(id -un)"
+            echo "Until then, read it on the server with:"
+            echo "    sudo journalctl -u clockinxtra-api -u clockinxtra-backoffice -n 80 --no-pager"
+          fi
 
           rolled=0
           for root in "$API_ROOT" "$ADMIN_ROOT"; do
