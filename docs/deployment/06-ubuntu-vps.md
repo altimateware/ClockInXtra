@@ -486,7 +486,7 @@ Then sign in at `https://clockinxtra.xwoks.com`, change the password it forced, 
 |---|---|
 | Logs | `journalctl -u clockinxtra-api -f` |
 | Status | `systemctl status clockinxtra-api clockinxtra-backoffice` |
-| Readiness | `curl -s localhost:6200/health/ready \| jq` |
+| Readiness | `curl -s -H 'Host: api.clockinxtra.xwoks.com' localhost:6200/health/ready \| jq`. **The Host header is required**: `AllowedHosts` is the public name, so a request arriving as `localhost` is refused with 400 before it reaches a route |
 | Manual rollback | For each of `/var/www/clockinxtra/api` and `/var/www/clockinxtra/backoffice`: `ln -sfn $root/releases/<older> $root/current.new && mv -Tf $root/current.new $root/current`, then `sudo systemctl restart clockinxtra-api clockinxtra-backoffice`. Move both, or the two hosts run different releases |
 | Smoke suite (test environments only — it writes rows) | `sqlcmd -S localhost -U sa -C -d ClockInXtra -i database/tests/smoke_attendance.sql` |
 
