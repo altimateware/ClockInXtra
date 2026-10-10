@@ -14,7 +14,16 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Services(services)
     .Enrich.FromLogContext());
 
-builder.Services.AddAttendanceAdministration(builder.Configuration, builder.Environment);
+// --deploy-database applies schema scripts and exits. It needs the database
+// and nothing else, so the key ring is left unconfigured for it: loading that
+// certificate would require the deployment identity to be able to read the
+// private key that protects every authenticator secret, and a deployment
+// identity is the one an automated pipeline holds. The portal itself always
+// configures it.
+bool schemaOnly = args.Contains("--deploy-database", StringComparer.Ordinal);
+
+builder.Services.AddAttendanceAdministration(
+    builder.Configuration, builder.Environment, protectSecrets: !schemaOnly);
 
 // The portal cannot enrol or verify an authenticator without the key ring, and
 // can do nothing without the database: either one failing makes the node unready.

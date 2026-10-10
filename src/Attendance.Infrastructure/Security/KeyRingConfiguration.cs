@@ -224,8 +224,8 @@ public static class KeyRingConfiguration
         if (!File.Exists(path))
         {
             throw new InvalidOperationException(
-                $"Data Protection certificate file '{path}' does not exist, or the service account " +
-                "cannot read it.");
+                $"Data Protection certificate file '{path}' does not exist, or the account this process " +
+                "runs as cannot see the directory holding it.");
         }
 
         X509Certificate2 certificate;
@@ -236,6 +236,19 @@ public static class KeyRingConfiguration
                 path,
                 string.IsNullOrEmpty(password) ? null : password,
                 X509KeyStorageFlags.EphemeralKeySet);
+        }
+        catch (Exception exception) when (IsPermissionFailure(exception))
+        {
+            // Separated from a password failure because the two have nothing to
+            // do with one another, and reporting a permission error as "check
+            // the password" sent a real deployment looking in the wrong place.
+            // The certificate is normally readable by the service account only,
+            // so the usual cause is a different account running the process.
+            throw new InvalidOperationException(
+                $"Data Protection certificate file '{path}' cannot be read by the account this process " +
+                "runs as. It is normally readable only by the service account, so check which account "
+                + "this is running as rather than widening the file's permissions: the private key in it "
+                + "protects every authenticator secret.", exception);
         }
         catch (CryptographicException exception)
         {
@@ -255,6 +268,25 @@ public static class KeyRingConfiguration
         }
 
         return certificate;
+    }
+
+    /// <summary>
+    /// Whether a failure to load the certificate was the file system refusing
+    /// access rather than the contents being wrong. The access error arrives
+    /// wrapped in a <see cref="CryptographicException"/>, so the chain has to be
+    /// walked.
+    /// </summary>
+    private static bool IsPermissionFailure(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is UnauthorizedAccessException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static X509Certificate2 LoadCertificate(string thumbprint)

@@ -125,10 +125,29 @@ public static class InfrastructureServiceCollectionExtensions
     /// the moment somebody used the feature, not at startup.
     /// </para>
     /// </remarks>
+    /// <param name="services">The container.</param>
+    /// <param name="configuration">Host configuration.</param>
+    /// <param name="environment">Host environment.</param>
+    /// <param name="protectSecrets">
+    /// Whether to configure the Data Protection key ring. <c>false</c> is for a
+    /// command that only applies SQL scripts and then exits.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the key ring is optional.</b> Configuring it loads the
+    /// certificate that protects every authenticator secret, which the portal
+    /// needs and <c>--deploy-database</c> does not: that command runs schema
+    /// scripts and exits. Loading it anyway would mean the deployment identity
+    /// had to be able to read that private key — and a deployment identity
+    /// is the one an automated pipeline holds. Skipping it keeps the key
+    /// readable by the service account alone.
+    /// </para>
+    /// </remarks>
     public static IServiceCollection AddAttendanceAdministration(
         this IServiceCollection services,
         IConfiguration configuration,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        bool protectSecrets = true)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -144,7 +163,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
         services.TryAddSingleton<IClock, SystemClock>();
 
-        AddDataProtection(services, configuration, environment);
+        if (protectSecrets)
+        {
+            AddDataProtection(services, configuration, environment);
+        }
+
         AddDatabaseDeployment(services, configuration, environment);
 
         // Shared with the API: hashing, TOTP, lockout counters and the security
