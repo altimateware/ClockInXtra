@@ -55,6 +55,37 @@ public sealed class PortalSecurityTests : IAsyncLifetime
         await _factory.DisposeAsync();
     }
 
+    [Fact]
+    public async Task TheErrorPageRendersForAnAnonymousVisitorAndDisclosesNothing()
+    {
+        // UseExceptionHandler is registered only outside Development, so no test
+        // had ever rendered this page: a developer sees the developer exception
+        // page instead. It had never worked. Two ErrorViewModel types existed,
+        // one from the project template and one written by hand, and the view
+        // resolved the template's while the controller passed the other -- so
+        // every failure in production answered 500 from the error handler itself
+        // and masked whatever had actually gone wrong.
+        //
+        // Requested directly, because Error is an ordinary anonymous action and
+        // that works in any environment.
+        HttpResponseMessage response = await _client.GetAsync(
+            "/Home/Error", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        string html = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        // Anonymous: an unhandled failure may well be a failure to authenticate,
+        // and an error page behind a sign-in produces a redirect loop.
+        Assert.Contains("Something went wrong", html, StringComparison.Ordinal);
+
+        // It must not teach a visitor how to make the server disclose more, nor
+        // disclose anything itself (Claude.md section 34).
+        Assert.DoesNotContain("Development", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("stack", html, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("/health/live")]
     [InlineData("/health/ready")]
