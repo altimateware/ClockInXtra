@@ -37,7 +37,7 @@ Set on both application pools:
 | `SqlServer__ConnectionString` | `Server=sql01.corp.local;Database=ClockInXtra;Integrated Security=True;Encrypt=True;Pool Blocking Period=NeverBlock` (gMSA), or a SQL login from the secret store. Never `TrustServerCertificate=True` in production. The blocking period is explained below |
 | `DataProtection__KeyRingPath` | `\\keys01\clockinxtra-keyring` — **the same path for the API and the portal** |
 | `DataProtection__CertificateThumbprint` | Thumbprint of the key-encryption certificate |
-| `AllowedHosts` | The site's own host name(s), e.g. `attendance.altimateware.com`. The shipped value `*` accepts any `Host` header |
+| `AllowedHosts` | The site's own host name(s) — on the deployed VPS, `api.clockinxtra.xwoks.com` for the API and `clockinxtra.xwoks.com` for the portal. The shipped value `*` accepts any `Host` header |
 
 API only:
 

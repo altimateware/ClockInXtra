@@ -52,7 +52,7 @@ The API address is compiled in. Release builds accept **only `https://`**; the c
 
 ```bash
 cd mobile
-flutter build apk --release --dart-define=CLOCKINXTRA_API_BASE_URL=https://attendance.altimateware.com
+flutter build apk --release --dart-define-from-file=dart_defines/deployed.json
 ```
 
 or `flutter build appbundle --release ...` if the distribution channel wants an app bundle.
@@ -61,7 +61,7 @@ Build-time switches that exist, and where they apply:
 
 | Define | Effect | Release build |
 |---|---|---|
-| `CLOCKINXTRA_API_BASE_URL` | API address | Required, must be `https://` |
+| `CLOCKINXTRA_API_BASE_URL` | API address | Required, must be `https://`. Held in `mobile/dart_defines/deployed.json` as `https://api.clockinxtra.xwoks.com`, which is what the deployed nginx serves and what the TLS certificate covers. An address is configuration, not a secret, so the file is committed; pass it with `--dart-define-from-file` rather than retyping it |
 | `CLOCKINXTRA_ALLOW_CLEARTEXT` | Allows `http://` for a local development server | **Ignored** |
 | `CLOCKINXTRA_ALLOW_COMPROMISED_DEVICE_FOR_DEVELOPMENT` | Ignores root indicators so AOSP/"Google APIs" emulator images can be used | **Ignored** |
 
