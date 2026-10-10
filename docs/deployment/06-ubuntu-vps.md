@@ -447,6 +447,20 @@ server {
 
 **The health endpoints are restricted to loopback.** nginx proxies everything under `/`, so without the `location /health` blocks above, `https://api.clockinxtra.xwoks.com/health/ready` answers to anyone on the internet — and the readiness payload names every check and its result. Restricting it costs nothing operationally: the deployment workflow probes Kestrel directly on `127.0.0.1`, which never passes through nginx, and an operator on the box is on loopback too. Note that a `location` does not inherit `proxy_pass` from a sibling, so the block has to repeat the proxy directives or `/health` stops being proxied at all and nginx answers 404 from the file system.
 
+**Testing that restriction needs care.** Running `curl https://api.clockinxtra.xwoks.com/health/ready` *on the server* returns 403, and that is correct rather than a mistake: the public DNS name resolves to the public address, so the connection leaves and re-enters by the public interface and nginx sees the public address as `$remote_addr`. Force the connection to loopback to test the allow rule, keeping the real name for SNI and `Host`:
+
+```bash
+# 200 - allowed, because the connection really is from 127.0.0.1
+curl -s -o /dev/null -w '%{http_code}
+'   --resolve api.clockinxtra.xwoks.com:443:127.0.0.1   https://api.clockinxtra.xwoks.com/health/ready
+
+# 403 - denied, from anywhere else
+curl -s -o /dev/null -w '%{http_code}
+' https://api.clockinxtra.xwoks.com/health/ready
+```
+
+If a monitoring system should scrape readiness over HTTPS, add its address to the `allow` list rather than removing the restriction.
+
 `X-Forwarded-Proto` is not optional. Without it the portal redirects to https, nginx forwards over http again, and the browser loops; and its Secure-only session cookie is never issued. Both existing sites set it, and `Admin:KnownProxies` must list `127.0.0.1` for the portal to act on it.
 
 Both sites are already enabled, and the certificate is already issued. Verified 2026-10-09:
