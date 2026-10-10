@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_models.dart';
+import '../../app_initialization/application/startup_controller.dart';
 import '../application/attendance_action_controller.dart';
 
 /// Today's attendance, and the one action that applies to it (§11, §12, §14).
@@ -30,8 +31,52 @@ class _AttendanceStatusViewState extends ConsumerState<AttendanceStatusView> {
   final TextEditingController _password = TextEditingController();
   final TextEditingController _code = TextEditingController();
 
+  /// The startup controller, held because [dispose] must not read a provider.
+  ///
+  /// Assigned in [initState] rather than as a `late` initialiser: a lazy one is
+  /// first evaluated wherever it is first used, which — when nothing was ever
+  /// typed — is [dispose], and reading a provider there throws.
+  late final StartupController _startup;
+
+  bool _draftReported = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _startup = ref.read(startupControllerProvider.notifier);
+
+    // Reading the authenticator code means leaving this app, and coming back to
+    // an empty form is worse than it sounds: the code expires while the user ID
+    // and password are retyped, so the next code is stale too. Telling the
+    // startup controller that something is half-typed is what stops the resume
+    // from discarding it.
+    for (final TextEditingController field in <TextEditingController>[_userId, _password, _code]) {
+      field.addListener(_reportDraft);
+    }
+  }
+
+  void _reportDraft() {
+    final bool hasDraft =
+        _userId.text.isNotEmpty || _password.text.isNotEmpty || _code.text.isNotEmpty;
+
+    // Only on a change, so typing does not call into the controller per keystroke.
+    if (hasDraft != _draftReported) {
+      _draftReported = hasDraft;
+      _startup.setCredentialDraft(hasDraft);
+    }
+  }
+
   @override
   void dispose() {
+    // Left set, the flag would suppress every later resume. Cleared through the
+    // reference captured above rather than through ref, which is not usable here.
+    _startup.setCredentialDraft(false);
+
+    for (final TextEditingController field in <TextEditingController>[_userId, _password, _code]) {
+      field.removeListener(_reportDraft);
+    }
+
     _userId.dispose();
     _password
       ..clear()

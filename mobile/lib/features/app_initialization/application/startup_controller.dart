@@ -53,6 +53,21 @@ final class StartupController extends Notifier<StartupState> {
   /// sequences can never race to set the state.
   Future<void> restart() => _running ??= _sequence(mayRepeat: true).whenComplete(() => _running = null);
 
+  /// Whether the employee is part-way through typing credentials.
+  ///
+  /// Set by the screens that hold a password and an authenticator code. It is
+  /// not state anyone else can see, and it never affects what the server is
+  /// told — only whether [resume] throws the form away.
+  bool _credentialDraft = false;
+
+  /// Records whether a credential form currently holds anything typed.
+  ///
+  /// Clock-in needs a six-digit code from an authenticator app, so the employee
+  /// must leave this one to read it. Returning to an empty form is not a small
+  /// annoyance: the code they went to fetch expires while they retype the user
+  /// ID and password, so the next code is wrong too, and they loop.
+  void setCredentialDraft(bool hasDraft) => _credentialDraft = hasDraft;
+
   /// What the app does when it returns to the foreground.
   ///
   /// Normally the whole sequence again: the employee may have walked away from
@@ -74,8 +89,14 @@ final class StartupController extends Notifier<StartupState> {
   /// those alone. Location is enforced where it is actually load-bearing — at
   /// clock-in and clock-out, every time, server-side. The sequence runs in full
   /// the moment registration finishes, so nothing here is left stale.
+  /// **Attendance is covered by the same exception, and that costs nothing.**
+  /// Not re-running the sequence leaves the clock-in button on screen for an
+  /// employee who has walked away, but it does not let them clock in from
+  /// there: the clock-in request carries its own position and the server
+  /// validates it on every call. The startup check decides what is shown; the
+  /// server decides what is recorded, and only the second is a control (§65).
   Future<void> resume() async {
-    if (state is StartupNeedsRegistration) {
+    if (state is StartupNeedsRegistration || _credentialDraft) {
       return;
     }
 

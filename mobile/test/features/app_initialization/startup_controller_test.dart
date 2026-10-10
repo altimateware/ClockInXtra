@@ -296,6 +296,29 @@ void main() {
       expect(harness.api.calls.where((String call) => call == 'validateLocation'), hasLength(2));
     });
 
+    test('leaves a half-typed clock-in alone, and refreshes again once it is gone', () async {
+      // Clock-in needs an authenticator code too, so the same trip out of the
+      // app applies — and losing the form there is worse, because the code
+      // expires while the password is retyped.
+      final Harness harness = Harness(store: FakeStore(devicePublicId: 'd1', userId: 'e.adeyemi'));
+      final StartupController controller = harness.container.read(startupControllerProvider.notifier);
+
+      await controller.restart();
+      final int afterFirst = harness.api.calls.length;
+
+      controller.setCredentialDraft(true);
+      await controller.resume();
+
+      expect(harness.api.calls, hasLength(afterFirst));
+
+      // Submitted or abandoned: the next resume behaves normally again, so a
+      // stuck flag cannot leave the app never re-checking anything.
+      controller.setCredentialDraft(false);
+      await controller.resume();
+
+      expect(harness.api.calls.length, greaterThan(afterFirst));
+    });
+
     test('leaves the registration form alone, because the code comes from another app', () async {
       // Registering needs a six-digit code from an authenticator, so leaving
       // this app is a step in the flow rather than an accident. A restart here
