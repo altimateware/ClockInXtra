@@ -84,8 +84,10 @@ public static class AdministratorRecovery
             return 2;
         }
 
-        string password = ConsoleInput.PromptSecret("New temporary password");
-        string confirmation = ConsoleInput.PromptSecret("Confirm password");
+        string password = ConsoleInput.PromptSecret(
+            "New temporary password", "the account must change it at next sign-in");
+
+        string confirmation = ConsoleInput.PromptSecret("Confirm the temporary password");
 
         if (!string.Equals(password, confirmation, StringComparison.Ordinal))
         {

@@ -375,6 +375,27 @@ server {
     # Bodies are small and fixed in shape; the API caps them itself as well.
     client_max_body_size 256k;
 
+    # The readiness payload names every check and its result, which is more
+    # than the internet needs to know about a server. Loopback only, so the
+    # probes that matter still work: the deployment workflow talks to Kestrel
+    # directly on 127.0.0.1:6200 and does not pass through nginx at all.
+    #
+    # proxy_pass is repeated because a location does not inherit it from a
+    # sibling. Without it this block would stop proxying /health entirely and
+    # answer 404 from the file system.
+    location /health {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+
+        proxy_pass http://127.0.0.1:6200;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:6200;
         proxy_http_version 1.1;
@@ -390,6 +411,27 @@ server {
     server_name clockinxtra.xwoks.com;
     client_max_body_size 1m;
 
+    # The readiness payload names every check and its result, which is more
+    # than the internet needs to know about a server. Loopback only, so the
+    # probes that matter still work: the deployment workflow talks to Kestrel
+    # directly on 127.0.0.1:6100 and does not pass through nginx at all.
+    #
+    # proxy_pass is repeated because a location does not inherit it from a
+    # sibling. Without it this block would stop proxying /health entirely and
+    # answer 404 from the file system.
+    location /health {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+
+        proxy_pass http://127.0.0.1:6100;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:6100;
         proxy_http_version 1.1;
@@ -402,6 +444,22 @@ server {
 ```
 
 </details>
+
+**The health endpoints are restricted to loopback.** nginx proxies everything under `/`, so without the `location /health` blocks above, `https://api.clockinxtra.xwoks.com/health/ready` answers to anyone on the internet — and the readiness payload names every check and its result. Restricting it costs nothing operationally: the deployment workflow probes Kestrel directly on `127.0.0.1`, which never passes through nginx, and an operator on the box is on loopback too. Note that a `location` does not inherit `proxy_pass` from a sibling, so the block has to repeat the proxy directives or `/health` stops being proxied at all and nginx answers 404 from the file system.
+
+**Testing that restriction needs care.** Running `curl https://api.clockinxtra.xwoks.com/health/ready` *on the server* returns 403, and that is correct rather than a mistake: the public DNS name resolves to the public address, so the connection leaves and re-enters by the public interface and nginx sees the public address as `$remote_addr`. Force the connection to loopback to test the allow rule, keeping the real name for SNI and `Host`:
+
+```bash
+# 200 - allowed, because the connection really is from 127.0.0.1
+curl -s -o /dev/null -w '%{http_code}
+'   --resolve api.clockinxtra.xwoks.com:443:127.0.0.1   https://api.clockinxtra.xwoks.com/health/ready
+
+# 403 - denied, from anywhere else
+curl -s -o /dev/null -w '%{http_code}
+' https://api.clockinxtra.xwoks.com/health/ready
+```
+
+If a monitoring system should scrape readiness over HTTPS, add its address to the `allow` list rather than removing the restriction.
 
 `X-Forwarded-Proto` is not optional. Without it the portal redirects to https, nginx forwards over http again, and the browser loops; and its Secure-only session cookie is never issued. Both existing sites set it, and `Admin:KnownProxies` must list `127.0.0.1` for the portal to act on it.
 
