@@ -1,6 +1,7 @@
 using System.Data;
 using Attendance.Application.Abstractions;
 using Attendance.Domain.Enums;
+using Attendance.Domain.ValueObjects;
 using Attendance.Infrastructure.Persistence.Connection;
 using Dapper;
 
@@ -167,16 +168,22 @@ public sealed class MobileUserAdministrationRepository : IMobileUserAdministrati
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<MobileUserSummary>> SearchAsync(
+    public async Task<PagedResult<MobileUserSummary>> SearchAsync(
         string? searchTerm,
         bool onlyNotReady,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken)
     {
         DynamicParameters parameters = new();
         parameters.Add("@SearchTerm", string.IsNullOrWhiteSpace(searchTerm) ? null : searchTerm, DbType.String, size: 128);
         parameters.Add("@OnlyNotReady", onlyNotReady, DbType.Boolean);
-        parameters.Add("@PageNumber", 1, DbType.Int32);
-        parameters.Add("@PageSize", 100, DbType.Int32);
+
+        // Was page 1 of 100 with the total thrown away, so employee 101 did not
+        // exist as far as the portal was concerned and the page said nothing
+        // about it. The procedure has taken these since it was written.
+        parameters.Add("@PageNumber", page, DbType.Int32);
+        parameters.Add("@PageSize", pageSize, DbType.Int32);
         parameters.Add("@TotalCount", dbType: DbType.Int32, direction: ParameterDirection.Output);
         parameters.Add("@ResultCode", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
@@ -188,9 +195,11 @@ public sealed class MobileUserAdministrationRepository : IMobileUserAdministrati
                 SearchProcedure, parameters, _connectionFactory.CommandTimeoutSeconds, cancellationToken))
             .ConfigureAwait(false);
 
-        return
+        List<SearchRow> matched = [.. rows];
+
+        return new PagedResult<MobileUserSummary>(
         [
-            .. rows.Select(row => new MobileUserSummary(
+            .. matched.Select(row => new MobileUserSummary(
                 row.MobileUserId,
                 row.UserId,
                 $"{row.FirstName} {row.LastName}".Trim(),
@@ -201,9 +210,25 @@ public sealed class MobileUserAdministrationRepository : IMobileUserAdministrati
                 row.HasActiveDevice,
                 row.HasDeviceAwaitingApproval,
                 row.CanClockIn,
-                Missing(row))),
-        ];
+                Missing(row),
+                Device(row))),
+        ],
+            page,
+            pageSize,
+            parameters.Get<int>("@TotalCount"));
     }
+
+    /// <summary>The employee's device, where the search found one.</summary>
+    private static EmployeeDevice? Device(SearchRow row) =>
+        row.DeviceId is null
+            ? null
+            : new EmployeeDevice(
+                row.DeviceId.Value,
+                row.DeviceModel,
+                (DevicePlatform)(row.DevicePlatform ?? 0),
+                (DeviceStatus)(row.DeviceStatus ?? 0),
+                row.DeviceLastSeenUtc.ToUtcOffset(),
+                row.DeviceRegisteredUtc?.ToUtcOffset() ?? default);
 
     /// <inheritdoc />
     public async Task<EmployeeDetail?> GetEmployeeAsync(int mobileUserId, CancellationToken cancellationToken)
@@ -376,6 +401,15 @@ public sealed class MobileUserAdministrationRepository : IMobileUserAdministrati
         public bool HasActiveDevice { get; init; }
         public bool HasDeviceAwaitingApproval { get; init; }
         public bool CanClockIn { get; init; }
+
+        /* The employee's current device, from the search's OUTER APPLY. Every
+           column is nullable because an employee may have no device at all. */
+        public int? DeviceId { get; init; }
+        public string? DeviceModel { get; init; }
+        public byte? DevicePlatform { get; init; }
+        public byte? DeviceStatus { get; init; }
+        public DateTime? DeviceLastSeenUtc { get; init; }
+        public DateTime? DeviceRegisteredUtc { get; init; }
     }
 
     private sealed class DetailRow

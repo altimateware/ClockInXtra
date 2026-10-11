@@ -39,6 +39,8 @@ public sealed class ReportsController : Controller
         int? officeLocationId,
         AttendanceRecordStatus? status,
         AttendanceExceptionKind? exception,
+        int? page = null,
+        int? pageSize = null,
         CancellationToken cancellationToken = default)
     {
         // Tomorrow in UTC is today or later in every time zone, so the default
@@ -62,7 +64,11 @@ public sealed class ReportsController : Controller
             status is { } s && Enum.IsDefined(s) ? s : null,
             exception is { } e && Enum.IsDefined(e) ? e : null);
 
-        IReadOnlyList<AttendanceReportRow> rows = await _reporting.GetDailyAttendanceAsync(filter, cancellationToken);
+        PagedResult<AttendanceReportRow> rows = await _reporting.GetDailyAttendanceAsync(
+            filter,
+            Paging.ClampPage(page),
+            Paging.ClampPageSize(pageSize),
+            cancellationToken);
         IReadOnlyList<OfficeLocationDetail> offices = await _locations.GetAllAsync(1, cancellationToken);
 
         ViewData["Filter"] = filter;

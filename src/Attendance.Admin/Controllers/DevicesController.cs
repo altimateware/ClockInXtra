@@ -57,7 +57,11 @@ public sealed class DevicesController : Controller
     /// </remarks>
     [HttpGet]
     [Authorize(Permissions.DeviceView)]
-    public async Task<IActionResult> Index(byte? status, CancellationToken cancellationToken)
+    public async Task<IActionResult> Index(
+        byte? status,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken)
     {
         // An unknown filter is a malformed URL, not a reason to show everything:
         // silently widening a filter is how somebody revokes the wrong device.
@@ -66,8 +70,11 @@ public sealed class DevicesController : Controller
             return BadRequest();
         }
 
-        IReadOnlyList<RegisteredDevice> devices =
-            await _devices.GetRegisteredAsync((DeviceStatus?)status, cancellationToken);
+        PagedResult<RegisteredDevice> devices = await _devices.GetRegisteredAsync(
+            (DeviceStatus?)status,
+            Paging.ClampPage(page),
+            Paging.ClampPageSize(pageSize),
+            cancellationToken);
 
         ViewData["StatusFilter"] = status;
 

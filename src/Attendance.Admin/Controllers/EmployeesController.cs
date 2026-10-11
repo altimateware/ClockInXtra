@@ -65,9 +65,11 @@ public sealed class EmployeesController : Controller
     public async Task<IActionResult> Index(
         string? search,
         bool onlyNotReady = true,
+        int? page = null,
+        int? pageSize = null,
         CancellationToken cancellationToken = default)
     {
-        return await IndexViewAsync(search, onlyNotReady, draft: null, cancellationToken);
+        return await IndexViewAsync(search, onlyNotReady, draft: null, page, pageSize, cancellationToken);
     }
 
     /// <summary>
@@ -79,10 +81,16 @@ public sealed class EmployeesController : Controller
         string? search,
         bool onlyNotReady,
         CreateEmployeeInput? draft,
+        int? page,
+        int? pageSize,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<MobileUserSummary> employees =
-            await _employees.SearchAsync(search, onlyNotReady, cancellationToken);
+        PagedResult<MobileUserSummary> employees = await _employees.SearchAsync(
+            search,
+            onlyNotReady,
+            Paging.ClampPage(page),
+            Paging.ClampPageSize(pageSize),
+            cancellationToken);
 
         ViewData["Search"] = search;
         ViewData["OnlyNotReady"] = onlyNotReady;
@@ -140,7 +148,7 @@ public sealed class EmployeesController : Controller
         if (!ModelState.IsValid)
         {
             ViewData["Error"] = ValidationMessages();
-            return await IndexViewAsync(null, onlyNotReady: true, input, cancellationToken);
+            return await IndexViewAsync(null, onlyNotReady: true, input, page: null, pageSize: null, cancellationToken);
         }
 
         string password = InitialPassword.Generate();
@@ -171,7 +179,7 @@ public sealed class EmployeesController : Controller
                 _ => "The employee could not be created.",
             };
 
-            return await IndexViewAsync(null, onlyNotReady: true, input, cancellationToken);
+            return await IndexViewAsync(null, onlyNotReady: true, input, page: null, pageSize: null, cancellationToken);
         }
 
         return View("Created", new CreatedEmployeeViewModel

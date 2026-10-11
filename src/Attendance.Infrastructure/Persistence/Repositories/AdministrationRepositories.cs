@@ -64,12 +64,16 @@ public sealed class DeviceAdministrationRepository : IDeviceAdministrationReposi
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<RegisteredDevice>> GetRegisteredAsync(
+    public async Task<PagedResult<RegisteredDevice>> GetRegisteredAsync(
         DeviceStatus? status,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken)
     {
         DynamicParameters parameters = new();
         parameters.Add("@Status", status is null ? null : (byte)status.Value, DbType.Byte);
+        parameters.Add("@Page", page, DbType.Int32);
+        parameters.Add("@PageSize", pageSize, DbType.Int32);
         parameters.Add(ResultCodeParameter, dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await using SqlConnectionLease lease =
@@ -80,9 +84,15 @@ public sealed class DeviceAdministrationRepository : IDeviceAdministrationReposi
                 GetRegisteredProcedure, parameters, _connectionFactory.CommandTimeoutSeconds, cancellationToken))
             .ConfigureAwait(false);
 
-        return
+        List<RegisteredRow> page_ = [.. rows];
+
+        // COUNT(*) OVER () rides on every row, so an empty page carries no
+        // total — which is correct: no rows matched the filter.
+        int total = page_.Count == 0 ? 0 : page_[0].TotalCount;
+
+        return new PagedResult<RegisteredDevice>(
         [
-            .. rows.Select(row => new RegisteredDevice(
+            .. page_.Select(row => new RegisteredDevice(
                 row.DeviceId,
                 row.DevicePublicId,
                 row.RowVersion,
@@ -100,7 +110,10 @@ public sealed class DeviceAdministrationRepository : IDeviceAdministrationReposi
                 row.UserId,
                 $"{row.FirstName} {row.LastName}".Trim(),
                 row.Department)),
-        ];
+        ],
+            page,
+            pageSize,
+            total);
     }
 
     /// <inheritdoc />
@@ -189,6 +202,7 @@ public sealed class DeviceAdministrationRepository : IDeviceAdministrationReposi
 
     private sealed class RegisteredRow
     {
+        public int TotalCount { get; init; }
         public int DeviceId { get; init; }
         public Guid DevicePublicId { get; init; }
         public byte[] RowVersion { get; init; } = [];

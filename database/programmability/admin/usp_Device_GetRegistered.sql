@@ -38,6 +38,8 @@ GO
 
 CREATE OR ALTER PROCEDURE admin.usp_Device_GetRegistered
     @Status     TINYINT = NULL,       -- NULL = every status
+    @Page       INT     = 1,
+    @PageSize   INT     = 25,
     @ResultCode INT     OUTPUT
 AS
 BEGIN
@@ -49,7 +51,17 @@ BEGIN
         RETURN;
     END;
 
+    /* A page size arriving from a query string is untrusted. The ceiling is
+       here as well as in the caller because this procedure is the thing that
+       would actually read the rows. */
+    IF @Page IS NULL OR @Page < 1 OR @PageSize IS NULL OR @PageSize < 1 OR @PageSize > 200
+    BEGIN
+        SET @ResultCode = 1001;       -- InvalidRequest
+        RETURN;
+    END;
+
     SELECT
+        COUNT(*) OVER () AS TotalCount,
         d.DeviceId,
         d.DevicePublicId,
         d.[RowVersion],
@@ -75,7 +87,13 @@ BEGIN
     ORDER BY
         /* Pending first: those are decisions somebody is waiting on. */
         CASE d.Status WHEN 0 THEN 0 WHEN 1 THEN 1 ELSE 2 END,
-        d.RegisteredUtc DESC;
+        d.RegisteredUtc DESC,
+        /* A tie-break that is unique, so a row cannot appear on two pages or on
+           none: ORDER BY without one leaves the order of equal rows undefined,
+           and OFFSET then slices an order that may differ between queries. */
+        d.DeviceId DESC
+    OFFSET (@Page - 1) * @PageSize ROWS
+    FETCH NEXT @PageSize ROWS ONLY;
 
     SET @ResultCode = 0;
 END;

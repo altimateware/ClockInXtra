@@ -1,4 +1,5 @@
 using Attendance.Domain.Enums;
+using Attendance.Domain.ValueObjects;
 
 namespace Attendance.Application.Abstractions;
 
@@ -73,9 +74,19 @@ public interface IMobileUserAdministrationRepository
     /// credential, an authenticator or an active device. That is the list an
     /// administrator actually needs: everyone else is already working.
     /// </param>
-    Task<IReadOnlyList<MobileUserSummary>> SearchAsync(
+    /// <param name="page">The 1-based page to return.</param>
+    /// <param name="pageSize">How many rows a page holds.</param>
+    /// <remarks>
+    /// Paged because the list grows with the organisation. It previously asked
+    /// for page 1 of 100 rows and discarded the total, so on a system with more
+    /// than a hundred employees the hundred-and-first was simply absent, with
+    /// nothing on the page to say so.
+    /// </remarks>
+    Task<PagedResult<MobileUserSummary>> SearchAsync(
         string? searchTerm,
         bool onlyNotReady,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -194,6 +205,9 @@ public readonly record struct CreateEmployeeResult(
 /// <param name="HasActiveMfa">Whether an authenticator is enrolled and active.</param>
 /// <param name="HasActiveDevice">Whether an approved device exists.</param>
 /// <param name="HasDeviceAwaitingApproval">Whether a registration is pending.</param>
+/// <param name="Device">
+/// The device they are using, or <see langword="null"/> when they have none.
+/// </param>
 /// <param name="MissingDetails">
 /// Required details this record lacks (DEC-11), by their field names. Empty for
 /// a complete record; records created before every field became required may
@@ -215,7 +229,31 @@ public readonly record struct MobileUserSummary(
     bool HasActiveDevice,
     bool HasDeviceAwaitingApproval,
     bool CanClockIn,
-    IReadOnlyList<string> MissingDetails);
+    IReadOnlyList<string> MissingDetails,
+    EmployeeDevice? Device);
+
+/// <summary>
+/// The device an employee is actually using, as the employee list shows it.
+/// </summary>
+/// <param name="DeviceId">Internal identifier.</param>
+/// <param name="Model">Untrusted client metadata; absent when never reported.</param>
+/// <param name="Platform">Android or iOS.</param>
+/// <param name="Status">Active, or awaiting approval.</param>
+/// <param name="LastSeenUtc">The last request it signed, where it has signed one.</param>
+/// <param name="RegisteredUtc">When the employee registered it.</param>
+/// <remarks>
+/// An active device is preferred over one awaiting approval, and a revoked one
+/// is never shown: "their device" means the one that works. An employee with
+/// none has <see langword="null"/> here, which the page states plainly rather
+/// than leaving a blank cell.
+/// </remarks>
+public readonly record struct EmployeeDevice(
+    int DeviceId,
+    string? Model,
+    DevicePlatform Platform,
+    DeviceStatus Status,
+    DateTimeOffset? LastSeenUtc,
+    DateTimeOffset RegisteredUtc);
 
 /// <summary>An enrolment awaiting its first successful code.</summary>
 /// <param name="MfaCredentialId">Identifier of the enrolment.</param>

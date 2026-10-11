@@ -1,9 +1,11 @@
 @using Attendance.Admin.Controllers
 @using Attendance.Admin.Models
 @using Attendance.Application.Abstractions
-@model IReadOnlyList<Attendance.Application.Abstractions.MobileUserSummary>
+@using Attendance.Domain.ValueObjects
+@model PagedResult<MobileUserSummary>
 @{
     ViewData["Title"] = "Employees";
+    ViewData["Wide"] = true;
     bool onlyNotReady = ViewData["OnlyNotReady"] is true;
     CreateEmployeeInput? draft = ViewData["Draft"] as CreateEmployeeInput;
     bool canManage = User.HasClaim(
@@ -39,7 +41,20 @@
     </div>
 </form>
 
-@if (Model.Count == 0)
+@{
+    Dictionary<string, string?> carried = new(StringComparer.Ordinal);
+    if (!string.IsNullOrWhiteSpace(ViewData["Search"] as string))
+    {
+        carried["search"] = ViewData["Search"] as string;
+    }
+    carried["onlyNotReady"] = onlyNotReady ? "true" : "false";
+
+    string Moment(DateTimeOffset? value) => value is null
+        ? "never"
+        : value.Value.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+}
+
+@if (Model.TotalCount == 0)
 {
     @* Worded so it stays true when there are no employees at all. "Everyone has
        what they need" reads as reassurance on an empty system, which is the one
@@ -52,84 +67,140 @@
 }
 else
 {
-    @foreach (MobileUserSummary employee in Model)
-    {
-        <section class="employee">
-            <h2>@employee.FullName (@employee.UserId)</h2>
+    <div class="table-scroll">
+        <table class="grid">
+            <caption class="visually-hidden">Employees and their devices</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Employee</th>
+                    <th scope="col">User ID</th>
+                    <th scope="col">Department</th>
+                    <th scope="col">Password</th>
+                    <th scope="col">Authenticator</th>
+                    <th scope="col">Device</th>
+                    <th scope="col">Device last used</th>
+                    <th scope="col">Can clock in</th>
+                    <th scope="col" class="col-action">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (MobileUserSummary employee in Model.Items)
+                {
+                    <tr>
+                        <td>
+                            @employee.FullName
+                            @if (!employee.IsActive)
+                            {
+                                <span class="badge badge-off">inactive</span>
+                            }
+                            @if (employee.MissingDetails.Count > 0)
+                            {
+                                @* Every field is required (DEC-11); records made
+                                   before that may lack some. *@
+                                <div class="muted">Details missing: @string.Join(", ", employee.MissingDetails).</div>
+                            }
+                        </td>
+                        <td><code>@employee.UserId</code></td>
+                        <td>@(employee.Department ?? "—")</td>
 
-            @if (!employee.IsActive)
-            {
-                <p class="warning">This account is not active.</p>
-            }
+                        @* All three are required to clock in. Naming the missing
+                           one saves an administrator guessing why somebody was
+                           refused at a door. *@
+                        <td>
+                            @if (employee.HasCredential)
+                            {
+                                <span class="badge badge-ok">set</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-wait">not set</span>
+                            }
+                        </td>
+                        <td>
+                            @if (employee.HasActiveMfa)
+                            {
+                                <span class="badge badge-ok">active</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-wait">not active</span>
+                            }
+                        </td>
+                        <td>
+                            @if (employee.Device is { } device)
+                            {
+                                <text>@(device.Model ?? "not reported")</text>
+                                <div class="muted">
+                                    @device.Platform &#8212;
+                                    @(device.Status == DeviceStatus.Active ? "approved" : "awaiting approval")
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="badge badge-wait">none registered</span>
+                            }
+                        </td>
+                        <td>@(employee.Device is { } used ? Moment(used.LastSeenUtc) : "—")</td>
+                        <td>
+                            @if (employee.CanClockIn)
+                            {
+                                <span class="badge badge-ok">yes</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-off">no</span>
+                            }
+                        </td>
+                        <td class="col-action">
+                            <a asp-action="Edit" asp-route-id="@employee.MobileUserId">Edit</a>
 
-            <ul class="readiness">
-                @* All three are required. Naming the missing one saves an
-                   administrator guessing why somebody was refused at a door. *@
-                <li>Password: @(employee.HasCredential ? "set" : "NOT SET")</li>
-                <li>Authenticator: @(employee.HasActiveMfa ? "active" : "NOT ACTIVE")</li>
-                <li>
-                    Device:
-                    @if (employee.HasActiveDevice)
-                    {
-                        <text>approved</text>
-                    }
-                    else if (employee.HasDeviceAwaitingApproval)
-                    {
-                        <text>awaiting approval</text>
-                    }
-                    else
-                    {
-                        <text>NONE REGISTERED</text>
-                    }
-                </li>
-            </ul>
+                            @if (!employee.HasActiveMfa)
+                            {
+                                <form method="post" asp-action="Enrol" class="row-form">
+                                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
+                                    <input type="hidden" name="userId" value="@employee.UserId" />
+                                    <input type="hidden" name="replaceExisting" value="false" />
+                                    <button type="submit">Enrol authenticator</button>
+                                </form>
 
-            @if (!employee.CanClockIn)
-            {
-                <p class="warning">This employee cannot clock in.</p>
-            }
-
-            @if (employee.MissingDetails.Count > 0)
-            {
-                @* Every field is required (DEC-11); records made before that
-                   may lack some, and this is where they are completed. *@
-                <p class="warning">Details missing: @string.Join(", ", employee.MissingDetails).</p>
-            }
-
-            <p><a asp-action="Edit" asp-route-id="@employee.MobileUserId">Edit details</a></p>
-
-            @if (!employee.HasActiveMfa)
-            {
-                <form method="post" asp-action="Enrol">
-                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
-                    <input type="hidden" name="userId" value="@employee.UserId" />
-                    <label>
-                        <input type="checkbox" name="replaceExisting" value="true" />
-                        Replace an existing authenticator
-                    </label>
-                    <button type="submit">Enrol an authenticator</button>
-                </form>
-
-                <form method="post" asp-action="Activate">
-                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
-                    <label for="code-@employee.MobileUserId">Activation code</label>
-                    <input id="code-@employee.MobileUserId" name="code" inputmode="numeric"
-                           maxlength="6" autocomplete="off" />
-                    <button type="submit">Activate</button>
-                </form>
-            }
-            else
-            {
-                <form method="post" asp-action="RevokeMfa">
-                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
-                    <label for="reason-@employee.MobileUserId">Reason</label>
-                    <input id="reason-@employee.MobileUserId" name="reason" maxlength="256" />
-                    <button type="submit">Revoke authenticator</button>
-                </form>
-            }
-        </section>
-    }
+                                <form method="post" asp-action="Activate" class="row-form">
+                                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
+                                    <label class="visually-hidden" for="code-@employee.MobileUserId">Activation code</label>
+                                    <input id="code-@employee.MobileUserId" name="code" inputmode="numeric"
+                                           maxlength="6" autocomplete="off" placeholder="Activation code" />
+                                    <button type="submit">Activate</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" asp-action="RevokeMfa" class="row-form">
+                                    <input type="hidden" name="mobileUserId" value="@employee.MobileUserId" />
+                                    <label class="visually-hidden" for="reason-@employee.MobileUserId">Reason</label>
+                                    <input id="reason-@employee.MobileUserId" name="reason" maxlength="256"
+                                           placeholder="Reason" />
+                                    <button type="submit">Revoke authenticator</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
+
+@await Html.PartialAsync("_Pager", new PagerViewModel
+{
+    Page = Model.Page,
+    TotalPages = Model.TotalPages,
+    TotalCount = Model.TotalCount,
+    PageSize = Model.PageSize,
+    FirstRowNumber = Model.FirstRowNumber,
+    LastRowNumber = Model.LastRowNumber,
+    Noun = "employees",
+    Action = "Index",
+    RouteValues = carried,
+})
 
 <h2>Add an employee</h2>
 

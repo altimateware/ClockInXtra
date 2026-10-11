@@ -32,8 +32,10 @@ public sealed class ReportingRepository : IReportingRepository
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<AttendanceReportRow>> GetDailyAttendanceAsync(
+    public async Task<PagedResult<AttendanceReportRow>> GetDailyAttendanceAsync(
         AttendanceReportFilter filter,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken)
     {
         DynamicParameters parameters = new();
@@ -44,7 +46,8 @@ public sealed class ReportingRepository : IReportingRepository
         parameters.Add("@OfficeLocationId", filter.OfficeLocationId, DbType.Int32);
         parameters.Add("@Status", (byte?)filter.Status, DbType.Byte);
         parameters.Add("@Exception", (byte?)filter.Exception, DbType.Byte);
-        parameters.Add("@PageSize", ReportLimits.DailyAttendanceRows, DbType.Int32);
+        parameters.Add("@Page", page, DbType.Int32);
+        parameters.Add("@PageSize", pageSize, DbType.Int32);
         parameters.Add(ResultCodeParameter, dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await using SqlConnectionLease lease =
@@ -55,9 +58,11 @@ public sealed class ReportingRepository : IReportingRepository
                 DailyReportProcedure, parameters, _connectionFactory.CommandTimeoutSeconds, cancellationToken))
             .ConfigureAwait(false);
 
-        return
+        List<ReportRow> matched = [.. rows];
+
+        return new PagedResult<AttendanceReportRow>(
         [
-            .. rows.Select(row => new AttendanceReportRow(
+            .. matched.Select(row => new AttendanceReportRow(
                 row.AttendancePublicId,
                 DateOnly.FromDateTime(row.AttendanceDate),
                 row.UserId,
@@ -74,7 +79,10 @@ public sealed class ReportingRepository : IReportingRepository
                 row.ClockInDistanceMeters,
                 row.ClockInAccuracyMeters,
                 row.ClockInWasMockedLocation ?? false)),
-        ];
+        ],
+            page,
+            pageSize,
+            matched.Count == 0 ? 0 : matched[0].TotalCount);
     }
 
     /// <inheritdoc />
@@ -237,6 +245,9 @@ public sealed class ReportingRepository : IReportingRepository
 
     private sealed class ReportRow
     {
+        /* COUNT(*) OVER () from the procedure: the same value on every row. */
+        public int TotalCount { get; init; }
+
         public Guid AttendancePublicId { get; init; }
         public DateTime AttendanceDate { get; init; }
         public string UserId { get; init; } = string.Empty;

@@ -30,8 +30,10 @@ public interface IDeviceAdministrationRepository
     /// no screen could reach one — so a lost handset could be cut off only by
     /// enrolling its replacement first.
     /// </remarks>
-    Task<IReadOnlyList<RegisteredDevice>> GetRegisteredAsync(
+    Task<PagedResult<RegisteredDevice>> GetRegisteredAsync(
         DeviceStatus? status,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken);
 
     /// <summary>

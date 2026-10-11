@@ -72,6 +72,7 @@ CREATE OR ALTER PROCEDURE admin.usp_Attendance_GetDailyReport
     @OfficeLocationId INT           = NULL,
     @Status           TINYINT       = NULL,   -- 1 Open, 2 Closed, 3 Corrected
     @Exception        TINYINT       = NULL,   -- 1 Missing clock-out, 2 Late, 3 Early out, 4 Mocked
+    @Page             INT           = 1,
     @PageSize         INT           = 1000,
     @ResultCode       INT OUTPUT
 AS
@@ -82,6 +83,7 @@ BEGIN
        OR (@Status IS NOT NULL AND @Status NOT IN (1, 2, 3))
        OR (@Exception IS NOT NULL AND @Exception NOT IN (1, 2, 3, 4))
        OR @PageSize IS NULL OR @PageSize < 1 OR @PageSize > 5000
+       OR @Page IS NULL OR @Page < 1
     BEGIN
         SET @ResultCode = 1001;          -- InvalidRequest
         RETURN;
@@ -110,7 +112,13 @@ BEGIN
     IF @Today IS NULL
         SET @Today = DATEADD(DAY, -1, CAST(@NowUtc AS DATE));
 
-    SELECT TOP (@PageSize)
+    /* The total rides on every row rather than returning through an OUTPUT
+       parameter. An OUTPUT is only populated once the result set has been
+       consumed, which is a trap worth avoiding: read it too early and Dapper
+       hands back a DBNull rather than a number. It also keeps this procedure's
+       shape the same as admin.usp_Device_GetRegistered. */
+    SELECT
+        COUNT(*) OVER () AS TotalCount,
         a.AttendancePublicId,
         a.AttendanceDate,
         u.MobileUserPublicId,
@@ -160,7 +168,15 @@ BEGIN
            OR (@Exception = 2 AND a.IsLateClockIn = 1)
            OR (@Exception = 3 AND a.IsEarlyClockOut = 1)
            OR (@Exception = 4 AND ei.WasMockedLocation = 1))
-    ORDER BY a.AttendanceDate DESC, u.LastName, u.FirstName
+    ORDER BY a.AttendanceDate DESC, u.LastName, u.FirstName,
+             /* A unique tie-break. Without one the order of equal rows is
+                undefined, and OFFSET then slices an order that may differ
+                between two queries: a record can appear on two pages, or on
+                none. On an attendance report that is a record that looks
+                missing. */
+             a.AttendanceId
+    OFFSET (@Page - 1) * @PageSize ROWS
+    FETCH NEXT @PageSize ROWS ONLY
     OPTION (RECOMPILE);
 
     SET @ResultCode = 0;

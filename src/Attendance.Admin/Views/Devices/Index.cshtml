@@ -1,13 +1,25 @@
 @using Attendance.Application.Abstractions
-@model IReadOnlyList<Attendance.Application.Abstractions.RegisteredDevice>
+@using Attendance.Admin.Models
+@model PagedResult<RegisteredDevice>
 @{
     ViewData["Title"] = "Devices";
+    ViewData["Wide"] = true;
 
     byte? filter = ViewData["StatusFilter"] as byte?;
 
+    Dictionary<string, string?> carried = new(StringComparer.Ordinal);
+    if (filter is not null)
+    {
+        carried["status"] = filter.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     string Moment(DateTimeOffset? value) => value is null
         ? "—"
-        : value.Value.ToString("u", System.Globalization.CultureInfo.InvariantCulture);
+        : value.Value.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    string Tab(byte? status) => filter == status && (filter is not null || status is null)
+        ? "tab tab-current"
+        : "tab";
 }
 
 <h1>Devices</h1>
@@ -22,101 +34,114 @@
 }
 
 <p>
-    Every registered handset. Revoking one stops it recording attendance
-    immediately and permanently — a revoked device never becomes usable again,
-    and the employee has to register a replacement, which an administrator then
-    approves.
+    Revoking a device stops it recording attendance immediately and
+    permanently. The employee then registers a replacement, which an
+    administrator approves.
 </p>
 
-<nav class="filters">
-    <a asp-action="Index">All</a>
-    <a asp-action="Index" asp-route-status="0">Awaiting approval</a>
-    <a asp-action="Index" asp-route-status="1">Active</a>
-    <a asp-action="Index" asp-route-status="2">Revoked</a>
-    @if (filter is not null)
-    {
-        <span>Showing one status only.</span>
-    }
+<nav class="tabs" aria-label="Filter by status">
+    <a class="@Tab(null)" asp-action="Index">All</a>
+    <a class="@Tab(0)" asp-action="Index" asp-route-status="0">Awaiting approval</a>
+    <a class="@Tab(1)" asp-action="Index" asp-route-status="1">Active</a>
+    <a class="@Tab(2)" asp-action="Index" asp-route-status="2">Revoked</a>
 </nav>
 
-@if (Model.Count == 0)
+@if (Model.TotalCount == 0)
 {
     <p>No devices match.</p>
 }
 else
 {
-    foreach (RegisteredDevice device in Model)
-    {
-        <section class="device">
-            <h2>@device.EmployeeName (@device.UserId)</h2>
-
-            <dl>
-                <dt>Status</dt>
-                <dd>
-                    @switch (device.Status)
-                    {
-                        case DeviceStatus.Active:
-                            <span class="badge">Active</span>
-                            break;
-                        case DeviceStatus.PendingApproval:
-                            <span class="badge">Awaiting approval</span>
-                            break;
-                        default:
-                            <span class="badge">Revoked</span>
-                            break;
-                    }
-                </dd>
-
-                <dt>Device</dt>
-                <dd>@(device.DeviceModel ?? "not reported") — @device.Platform, @(device.OsVersion ?? "unknown OS"), app @(device.AppVersion ?? "unknown")</dd>
-
-                @* Evidence, not decoration: a level of None means the server could
-                   not verify the key lives in device hardware. *@
-                <dt>Attestation</dt>
-                <dd>@device.AttestationLevel</dd>
-
-                <dt>Registered</dt>
-                <dd>@Moment(device.RegisteredUtc)</dd>
-
-                <dt>Approved</dt>
-                <dd>@Moment(device.ApprovedUtc)</dd>
-
-                @* The difference between revoking carefully and revoking freely:
-                   a handset used this morning is somebody's working phone. *@
-                <dt>Last used</dt>
-                <dd>@Moment(device.LastSeenUtc)</dd>
-
-                @if (device.Status == DeviceStatus.Revoked)
+    <div class="table-scroll">
+        <table class="grid">
+            <caption class="visually-hidden">Registered devices</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Employee</th>
+                    <th scope="col">User ID</th>
+                    <th scope="col" class="col-status">Status</th>
+                    <th scope="col">Device</th>
+                    <th scope="col">Platform</th>
+                    <th scope="col">Attestation</th>
+                    <th scope="col">Registered</th>
+                    <th scope="col">Last used</th>
+                    <th scope="col" class="col-action">Revoke</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (RegisteredDevice device in Model.Items)
                 {
-                    <dt>Revoked</dt>
-                    <dd>@Moment(device.RevokedUtc) — @(device.RevokedReason ?? "no reason recorded")</dd>
+                    <tr>
+                        <td>@device.EmployeeName</td>
+                        <td><code>@device.UserId</code></td>
+                        <td class="col-status">
+                            @switch (device.Status)
+                            {
+                                case DeviceStatus.Active:
+                                    <span class="badge badge-ok">Active</span>
+                                    break;
+                                case DeviceStatus.PendingApproval:
+                                    <span class="badge badge-wait">Awaiting approval</span>
+                                    break;
+                                default:
+                                    <span class="badge badge-off">Revoked</span>
+                                    break;
+                            }
+                        </td>
+                        <td>
+                            @(device.DeviceModel ?? "not reported")
+                            @if (device.Status == DeviceStatus.Revoked && device.RevokedReason is { } reason)
+                            {
+                                <span class="muted">— @reason</span>
+                            }
+                        </td>
+                        <td>@device.Platform @(device.OsVersion ?? string.Empty)</td>
+                        @* Evidence, not decoration: None means the server could not
+                           verify the key lives in device hardware. *@
+                        <td>@device.AttestationLevel</td>
+                        <td>@Moment(device.RegisteredUtc)</td>
+                        @* The difference between revoking carefully and revoking
+                           freely: a handset used this morning is someone's working phone. *@
+                        <td>@Moment(device.LastSeenUtc)</td>
+                        <td class="col-action">
+                            @if (device.Status == DeviceStatus.Revoked)
+                            {
+                                <span class="muted">@Moment(device.RevokedUtc)</span>
+                            }
+                            else
+                            {
+                                @* The row version travels with the form. A device
+                                   changed since this page was drawn is refused rather
+                                   than acted on. *@
+                                <form method="post" asp-action="Revoke" class="row-form">
+                                    <input type="hidden" name="deviceId" value="@device.DeviceId" />
+                                    <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(device.RowVersion)" />
+                                    <input type="hidden" name="returnTo" value="Index" />
+                                    <label class="visually-hidden" for="reason-@device.DeviceId">
+                                        Reason, shown to the employee
+                                    </label>
+                                    <input id="reason-@device.DeviceId" name="reason" maxlength="256"
+                                           required placeholder="Reason (shown to the employee)" />
+                                    <button type="submit">Revoke</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
                 }
-
-                <dt>Department</dt>
-                <dd>@(device.Department ?? "—")</dd>
-            </dl>
-
-            @if (device.Status == DeviceStatus.Revoked)
-            {
-                <p>This device is revoked. There is nothing further to do with it.</p>
-            }
-            else
-            {
-                @* The row version travels with the form. If the device changed
-                   since this page was rendered — revoked by a colleague, or
-                   approved — the procedure refuses rather than acting on a
-                   stale view. *@
-                <form method="post" asp-action="Revoke">
-                    <input type="hidden" name="deviceId" value="@device.DeviceId" />
-                    <input type="hidden" name="rowVersion" value="@Convert.ToBase64String(device.RowVersion)" />
-                    <input type="hidden" name="returnTo" value="Index" />
-                    <label for="reason-@device.DeviceId">
-                        Reason — shown to the employee in the app
-                    </label>
-                    <input id="reason-@device.DeviceId" name="reason" maxlength="256" required />
-                    <button type="submit">Revoke this device</button>
-                </form>
-            }
-        </section>
-    }
+            </tbody>
+        </table>
+    </div>
 }
+
+@await Html.PartialAsync("_Pager", new PagerViewModel
+{
+    Page = Model.Page,
+    TotalPages = Model.TotalPages,
+    TotalCount = Model.TotalCount,
+    PageSize = Model.PageSize,
+    FirstRowNumber = Model.FirstRowNumber,
+    LastRowNumber = Model.LastRowNumber,
+    Noun = "devices",
+    Action = "Index",
+    RouteValues = carried,
+})

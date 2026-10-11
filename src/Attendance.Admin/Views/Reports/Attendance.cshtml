@@ -1,12 +1,27 @@
+@using Attendance.Admin.Models
 @using Attendance.Application.Abstractions
-@model IReadOnlyList<Attendance.Application.Abstractions.AttendanceReportRow>
+@model PagedResult<AttendanceReportRow>
 @{
     ViewData["Title"] = "Attendance";
+    ViewData["Wide"] = true;
     var filter = (AttendanceReportFilter)ViewData["Filter"]!;
     var offices = (IReadOnlyList<OfficeLocationDetail>)ViewData["Offices"]!;
     var options = ViewData["FilterOptions"] as ReportFilterOptions ?? ReportFilterOptions.None;
-    int missing = Model.Count(row => row.IsMissingClockOut);
-    bool truncated = Model.Count >= ReportLimits.DailyAttendanceRows;
+
+    @* Counted over this page only, and said so below: counting the whole
+       result would need the whole result, which is the thing paging avoids. *@
+    int missing = Model.Items.Count(row => row.IsMissingClockOut);
+
+    Dictionary<string, string?> carried = new(StringComparer.Ordinal)
+    {
+        ["from"] = filter.FromDate.ToString("yyyy-MM-dd"),
+        ["to"] = filter.ToDate.ToString("yyyy-MM-dd"),
+    };
+    if (!string.IsNullOrWhiteSpace(filter.UserId)) { carried["userId"] = filter.UserId; }
+    if (!string.IsNullOrWhiteSpace(filter.Department)) { carried["department"] = filter.Department; }
+    if (filter.OfficeLocationId is { } office) { carried["officeLocationId"] = office.ToString(System.Globalization.CultureInfo.InvariantCulture); }
+    if (filter.Status is { } st) { carried["status"] = ((int)st).ToString(System.Globalization.CultureInfo.InvariantCulture); }
+    if (filter.Exception is { } ex) { carried["exception"] = ((int)ex).ToString(System.Globalization.CultureInfo.InvariantCulture); }
     bool canCorrect = User.HasClaim(
         Attendance.Admin.Security.Permissions.ClaimType,
         Attendance.Admin.Security.Permissions.AttendanceCorrect);
@@ -98,24 +113,23 @@
     means the rule was not evaluated, not that the employee was on time.
 </p>
 
-@if (truncated)
-{
-    <p class="warning">
-        Only the first @ReportLimits.DailyAttendanceRows records are shown.
-        Narrow the date range or add a filter to see the rest.
-    </p>
-}
-
+@* The old "only the first 1000 records are shown" notice is gone: the report
+   is paged now, so the rest is a page away rather than something to narrow the
+   filter for. *@
 @if (missing > 0 && filter.Exception != AttendanceExceptionKind.MissingClockOut)
 {
     <p class="warning">
-        @missing record@(missing == 1 ? "" : "s") @(missing == 1 ? "has" : "have") no clock-out
+        @missing record@(missing == 1 ? "" : "s") on this page
+        @(missing == 1 ? "has" : "have") no clock-out
         from a business day already past. Those employees left without closing their record;
         only an administrative correction will complete them.
+        <a asp-action="Attendance"
+           asp-all-route-data="carried"
+           asp-route-exception="@((int)AttendanceExceptionKind.MissingClockOut)">Show every one of them</a>.
     </p>
 }
 
-@if (Model.Count == 0)
+@if (Model.TotalCount == 0)
 {
     <p>No attendance matches.</p>
 }
@@ -143,7 +157,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (AttendanceReportRow row in Model)
+                @foreach (AttendanceReportRow row in Model.Items)
                 {
                     <tr>
                         <td>@row.AttendanceDate.ToString("yyyy-MM-dd")</td>
@@ -188,3 +202,16 @@ else
         </table>
     </div>
 }
+
+@await Html.PartialAsync("_Pager", new PagerViewModel
+{
+    Page = Model.Page,
+    TotalPages = Model.TotalPages,
+    TotalCount = Model.TotalCount,
+    PageSize = Model.PageSize,
+    FirstRowNumber = Model.FirstRowNumber,
+    LastRowNumber = Model.LastRowNumber,
+    Noun = "records",
+    Action = "Attendance",
+    RouteValues = carried,
+})

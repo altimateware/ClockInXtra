@@ -136,6 +136,7 @@ GO
 :r programmability/admin/usp_MfaCredential_Revoke.sql
 :r programmability/admin/usp_Device_GetPendingApprovals.sql
 :r programmability/admin/usp_Device_GetRegistered.sql
+:r programmability/admin/usp_Dashboard_GetSummary.sql
 :r programmability/admin/usp_MobileUser_SetStatus.sql
 :r programmability/admin/usp_Administrator_RecordLogin.sql
 :r programmability/admin/usp_Administrator_RecordLogout.sql

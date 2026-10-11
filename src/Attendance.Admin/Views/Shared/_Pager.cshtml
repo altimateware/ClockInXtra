@@ -1,0 +1,54 @@
+@model Attendance.Admin.Models.PagerViewModel
+@*
+    The paging control for every grid that can grow.
+
+    It always states the totals, even on a single page. "Showing 1–8 of 8
+    devices" answers a question an administrator would otherwise have to count
+    to answer, and on a filtered list it is the difference between "there are
+    none" and "none match this filter".
+*@
+
+<nav class="pager" aria-label="Pages">
+    <p class="pager-count">
+        @if (Model.TotalCount == 0)
+        {
+            <text>No @Model.Noun to show.</text>
+        }
+        else
+        {
+            <text>
+                Showing @Model.FirstRowNumber&#8211;@Model.LastRowNumber of
+                @Model.TotalCount @Model.Noun@(Model.TotalPages > 1 ? $", page {Model.Page} of {Model.TotalPages}" : string.Empty).
+            </text>
+        }
+    </p>
+
+    @if (Model.TotalPages > 1)
+    {
+        <div class="pager-links">
+            @if (Model.HasPrevious)
+            {
+                <a asp-action="@Model.Action" asp-all-route-data="Model.RouteValuesFor(1)">First</a>
+                <a asp-action="@Model.Action" asp-all-route-data="Model.RouteValuesFor(Model.Page - 1)">Previous</a>
+            }
+            else
+            {
+                @* Rendered as text rather than omitted, so the controls do not
+                   shift under the pointer as the pages change. *@
+                <span class="pager-disabled">First</span>
+                <span class="pager-disabled">Previous</span>
+            }
+
+            @if (Model.HasNext)
+            {
+                <a asp-action="@Model.Action" asp-all-route-data="Model.RouteValuesFor(Model.Page + 1)">Next</a>
+                <a asp-action="@Model.Action" asp-all-route-data="Model.RouteValuesFor(Model.TotalPages)">Last</a>
+            }
+            else
+            {
+                <span class="pager-disabled">Next</span>
+                <span class="pager-disabled">Last</span>
+            }
+        </div>
+    }
+</nav>
