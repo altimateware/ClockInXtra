@@ -187,6 +187,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IAdministratorManagementRepository, AdministratorManagementRepository>();
 
         services.TryAddSingleton<IDeviceAdministrationRepository, DeviceAdministrationRepository>();
+        services.TryAddSingleton<IDashboardRepository, DashboardRepository>();
         services.TryAddSingleton<ISettingAdministrationRepository, SettingAdministrationRepository>();
         services.TryAddSingleton<IMfaEnrolmentRepository, MfaEnrolmentRepository>();
         services.TryAddSingleton<IMobileUserAdministrationRepository, MobileUserAdministrationRepository>();

@@ -151,8 +151,32 @@ BEGIN
                       THEN 1 ELSE 0 END AS BIT) AS HasActiveMfa,
             CAST(CASE WHEN EXISTS (SELECT 1 FROM core.EmployeeCredential AS c
                                    WHERE c.MobileUserId = u.MobileUserId)
-                      THEN 1 ELSE 0 END AS BIT) AS HasCredential
+                      THEN 1 ELSE 0 END AS BIT) AS HasCredential,
+
+            /* The device this employee is actually using, so the employee list
+               can show it without a second query per row. An active device is
+               preferred over one awaiting approval; a revoked one is not shown,
+               because "their device" means the one that works.
+
+               DEC-04 allows one active device per employee, so at most one row
+               can win — but the ordering is explicit rather than relying on
+               that, since a list page must not fail if the invariant ever does. */
+            dev.DeviceId        AS DeviceId,
+            dev.DeviceModel     AS DeviceModel,
+            dev.Platform        AS DevicePlatform,
+            dev.Status          AS DeviceStatus,
+            dev.LastSeenUtc     AS DeviceLastSeenUtc,
+            dev.RegisteredUtc   AS DeviceRegisteredUtc
         FROM core.MobileUser AS u
+        OUTER APPLY (
+            SELECT TOP (1)
+                   d.DeviceId, d.DeviceModel, d.Platform, d.Status,
+                   d.LastSeenUtc, d.RegisteredUtc
+            FROM core.Device AS d
+            WHERE d.MobileUserId = u.MobileUserId
+              AND d.Status IN (0, 1)
+            ORDER BY CASE d.Status WHEN 1 THEN 0 ELSE 1 END, d.RegisteredUtc DESC, d.DeviceId DESC
+        ) AS dev
         WHERE (@Status     IS NULL OR u.Status = @Status)
           AND (@Department IS NULL OR u.Department = @Department)
           AND (@Pattern    IS NULL
@@ -186,6 +210,12 @@ BEGIN
         HasActiveDevice,
         HasDeviceAwaitingApproval,
         CanClockIn,
+        DeviceId,
+        DeviceModel,
+        DevicePlatform,
+        DeviceStatus,
+        DeviceLastSeenUtc,
+        DeviceRegisteredUtc,
         CreatedUtc,
         UpdatedUtc,
         [RowVersion]

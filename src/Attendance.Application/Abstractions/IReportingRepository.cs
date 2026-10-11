@@ -5,9 +5,16 @@ namespace Attendance.Application.Abstractions;
 /// </summary>
 public interface IReportingRepository
 {
-    /// <summary>Daily attendance over a date range.</summary>
-    Task<IReadOnlyList<AttendanceReportRow>> GetDailyAttendanceAsync(
+    /// <summary>Daily attendance over a date range, one page at a time.</summary>
+    /// <remarks>
+    /// Paged because this grows every working day. It previously returned up
+    /// to a thousand rows with no total and no way to ask for the rest, so a
+    /// wide date range silently stopped at a thousand.
+    /// </remarks>
+    Task<PagedResult<AttendanceReportRow>> GetDailyAttendanceAsync(
         AttendanceReportFilter filter,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -272,11 +279,11 @@ public readonly record struct ValidationFailureSummary(
 /// <summary>Row limits shared by the reports and the pages that render them.</summary>
 public static class ReportLimits
 {
-    /// <summary>
-    /// Most rows the daily report returns. A range that exceeds it is one to
-    /// narrow, not to scroll; the page says so when the limit is reached.
-    /// </summary>
-    public const int DailyAttendanceRows = 1000;
+    /* DailyAttendanceRows is gone. It capped the daily report at a thousand
+       rows and told the reader to narrow the range, which is an odd thing to
+       ask of somebody running a month-end report: the records exist and they
+       wanted them. The report is paged now, so the rest is a page away and
+       Paging.MaximumPageSize is the only ceiling left. */
 
     /// <summary>Refusals per page of the validation-failure report.</summary>
     public const int ValidationFailuresPerPage = 200;

@@ -19,27 +19,35 @@ public sealed class AccountController : Controller
     private readonly AdministratorAuthenticator _authenticator;
     private readonly AdministratorPasswordChanger _passwordChanger;
     private readonly IAdministratorRepository _administrators;
+    private readonly IAdministratorPolicyProvider _policy;
 
     /// <summary>Creates the controller.</summary>
     public AccountController(
         AdministratorAuthenticator authenticator,
         AdministratorPasswordChanger passwordChanger,
-        IAdministratorRepository administrators)
+        IAdministratorRepository administrators,
+        IAdministratorPolicyProvider policy)
     {
         ArgumentNullException.ThrowIfNull(authenticator);
         ArgumentNullException.ThrowIfNull(passwordChanger);
         ArgumentNullException.ThrowIfNull(administrators);
+        ArgumentNullException.ThrowIfNull(policy);
 
         _authenticator = authenticator;
         _passwordChanger = passwordChanger;
         _administrators = administrators;
+        _policy = policy;
     }
 
     /// <summary>Shows the sign-in form.</summary>
     [HttpGet]
     [AllowAnonymous]
-    public IActionResult Login(string? returnUrl = null) =>
-        View(new LoginViewModel { ReturnUrl = returnUrl });
+    public async Task<IActionResult> Login(string? returnUrl, CancellationToken cancellationToken) =>
+        View(new LoginViewModel
+        {
+            ReturnUrl = returnUrl,
+            RequireAuthenticatorCode = await RequiresMfaAsync(cancellationToken),
+        });
 
     /// <summary>Attempts a sign-in.</summary>
     [HttpPost]
@@ -47,6 +55,10 @@ public sealed class AccountController : Controller
     public async Task<IActionResult> Login(LoginViewModel model, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(model);
+
+        // Carried on every path that re-renders the form, or a failed attempt
+        // would redraw it with the field back.
+        model.RequireAuthenticatorCode = await RequiresMfaAsync(cancellationToken);
 
         if (!ModelState.IsValid)
         {
@@ -265,6 +277,36 @@ public sealed class AccountController : Controller
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return RedirectToAction(nameof(Login));
     }
+
+    /// <summary>Whether this deployment asks administrators for a code.</summary>
+    /// <remarks>
+    /// <para>
+    /// Only ever used to decide whether to <em>draw</em> the field. The setting
+    /// is read again, server-side, by
+    /// <see cref="AdministratorAuthenticator"/> when the form is submitted, so a
+    /// caller who posts a code to a deployment that does not want one — or omits
+    /// one from a deployment that does — is judged by the policy and not by what
+    /// the page happened to render.
+    /// </para>
+    /// <para>
+    /// A failure to read it is treated as "required". Drawing a field nobody
+    /// needs is a confusing form; hiding one that is needed is a sign-in page
+    /// that cannot be used, and on a dead database neither works anyway.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> RequiresMfaAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            AdministratorPolicy policy = await _policy.GetAsync(cancellationToken);
+
+            return policy.RequireMfa;
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return true;
+        }
+    }
 }
 
 /// <summary>The sign-in form.</summary>
@@ -289,6 +331,17 @@ public sealed class LoginViewModel
 
     /// <summary>Where to go after signing in. Only local paths are honoured.</summary>
     public string? ReturnUrl { get; init; }
+
+    /// <summary>
+    /// Whether to draw the authenticator field.
+    /// </summary>
+    /// <remarks>
+    /// Presentation only, and never trusted on the way in: it is assigned by the
+    /// controller from the policy on every render, so a posted value is
+    /// overwritten before it is read. Whether a code is actually required is
+    /// decided server-side when the form is submitted.
+    /// </remarks>
+    public bool RequireAuthenticatorCode { get; set; } = true;
 }
 
 /// <summary>The change-password form.</summary>

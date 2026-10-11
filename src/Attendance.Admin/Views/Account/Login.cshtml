@@ -25,11 +25,21 @@
             <input asp-for="Password" type="password" value="" autocomplete="current-password" />
         </div>
 
-        <div class="field">
-            <label asp-for="AuthenticatorCode"></label>
-            <input asp-for="AuthenticatorCode" inputmode="numeric" autocomplete="one-time-code"
-                   maxlength="6" value="" />
-        </div>
+        @* Drawn only where the deployment asks for a code. A field that must be
+           left blank is a field people try to fill, and an empty one above the
+           sign-in button reads as a broken page.
+
+           This hides the input; it does not decide anything. The policy is read
+           again when the form is posted, so a code sent to a deployment that
+           does not want one is judged there, not here. *@
+        @if (Model.RequireAuthenticatorCode)
+        {
+            <div class="field">
+                <label asp-for="AuthenticatorCode"></label>
+                <input asp-for="AuthenticatorCode" inputmode="numeric" autocomplete="one-time-code"
+                       maxlength="6" value="" />
+            </div>
+        }
 
         <button type="submit">Sign in</button>
     </form>

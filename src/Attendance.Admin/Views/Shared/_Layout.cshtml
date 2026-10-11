@@ -108,7 +108,13 @@
     }
 
     <div class="page">
-        <main>
+        @* Pages that are mostly a grid opt out of the reading-width column.
+           A 72rem cap is right for prose and for forms, and wrong for a table
+           with nine columns: it forces a horizontal scrollbar on a screen with
+           room to spare, and a table you have to scroll sideways is one where
+           the row you are acting on and the button you press are never visible
+           together. *@
+        <main class="@(ViewData["Wide"] is true ? "wide" : null)">
             @RenderBody()
         </main>
 

@@ -1,6 +1,11 @@
+@using Attendance.Application.Abstractions
+@using Attendance.Admin.Security
 @model Attendance.Admin.Controllers.DashboardViewModel
 @{
     ViewData["Title"] = "Dashboard";
+    ViewData["Wide"] = true;
+
+    bool Has(string permission) => User.HasClaim(Permissions.ClaimType, permission);
 }
 
 <h1>Welcome, @Model.DisplayName</h1>
@@ -12,21 +17,205 @@
     <p class="message">@message</p>
 }
 
-<h2>Your permissions</h2>
-
-@if (Model.Permissions.Count == 0)
+@if (Model.Summary is not { } s)
 {
-    <p>
-        Your account holds no permissions. Until a super administrator assigns a
-        role, every page will refuse you.
+    <p class="warning">
+        The summary could not be read just now. Everything else in the portal
+        still works; try this page again shortly.
     </p>
 }
 else
 {
-    <ul>
-        @foreach (string permission in Model.Permissions)
-        {
-            <li>@permission</li>
-        }
-    </ul>
+    @*
+        Needs attention first, because it is the only section anyone can act on.
+        A card is shown even when its count is zero: "nothing is waiting" is the
+        answer an administrator came for, and a section that disappears when
+        empty makes them wonder whether it failed to load.
+    *@
+    <section class="panel">
+        <h2>Needs attention</h2>
+
+        <div class="cards">
+            <div class="card @(s.SettingsAwaitingConfirmation > 0 ? "card-alert" : null)">
+                <p class="card-figure">@s.SettingsAwaitingConfirmation</p>
+                <p class="card-label">Settings awaiting a decision</p>
+                @* Attendance cannot operate until these are decided, and the
+                   system deliberately refuses to invent them (§15, §68). *@
+                <p class="card-note">Attendance rules nobody has confirmed yet.</p>
+                @if (Has(Permissions.SettingView))
+                {
+                    <a asp-controller="Settings" asp-action="Index">Review settings</a>
+                }
+            </div>
+
+            <div class="card @(s.DevicesAwaitingApproval > 0 ? "card-alert" : null)">
+                <p class="card-figure">@s.DevicesAwaitingApproval</p>
+                <p class="card-label">Devices awaiting approval</p>
+                <p class="card-note">Nobody can clock in from these until approved.</p>
+                @if (Has(Permissions.DeviceView))
+                {
+                    <a asp-controller="Devices" asp-action="Pending">Review registrations</a>
+                }
+            </div>
+
+            <div class="card @(s.MissingClockOuts > 0 ? "card-alert" : null)">
+                <p class="card-figure">@s.MissingClockOuts</p>
+                <p class="card-label">Missing clock-outs</p>
+                @* Open from an earlier day: it will not resolve itself. *@
+                <p class="card-note">Open from an earlier day; needs a correction.</p>
+                @if (Has(Permissions.AttendanceCorrect))
+                {
+                    <a asp-controller="Corrections" asp-action="Index">Corrections</a>
+                }
+            </div>
+
+            <div class="card @(s.CorrectionsAwaitingApproval > 0 ? "card-alert" : null)">
+                <p class="card-figure">@s.CorrectionsAwaitingApproval</p>
+                <p class="card-label">Corrections awaiting approval</p>
+                <p class="card-note">Requested by an administrator, not yet approved.</p>
+                @if (Has(Permissions.AttendanceCorrect))
+                {
+                    <a asp-controller="Corrections" asp-action="Index">Review corrections</a>
+                }
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Today</h2>
+
+        <div class="cards">
+            <div class="card">
+                <p class="card-figure">@s.ClockedInNow</p>
+                <p class="card-label">Clocked in now</p>
+            </div>
+
+            <div class="card">
+                <p class="card-figure">@s.CompletedToday</p>
+                <p class="card-label">Finished for the day</p>
+            </div>
+
+            <div class="card">
+                <p class="card-figure">@s.LateToday</p>
+                <p class="card-label">Late arrivals</p>
+                <p class="card-note">Judged against the configured clock-in window.</p>
+            </div>
+
+            @if (Has(Permissions.ReportView))
+            {
+                <div class="card">
+                    <p class="card-label">Attendance report</p>
+                    <p class="card-note">Filter by date, employee, department or office.</p>
+                    <a asp-controller="Reports" asp-action="Attendance">Open the report</a>
+                </div>
+            }
+        </div>
+
+        <p class="card-note">
+            The day is the organisation's configured business day, not this
+            server's local date.
+        </p>
+    </section>
+
+    <section class="panel">
+        <h2>People and places</h2>
+
+        <div class="cards">
+            <div class="card">
+                <p class="card-figure">@s.ActiveEmployees</p>
+                <p class="card-label">Active employees</p>
+                @if (Has(Permissions.MobileUserView))
+                {
+                    <a asp-controller="Employees" asp-action="Index" asp-route-onlyNotReady="false">All employees</a>
+                }
+            </div>
+
+            <div class="card @(s.EmployeesNotReady > 0 ? "card-alert" : null)">
+                <p class="card-figure">@s.EmployeesNotReady</p>
+                <p class="card-label">Cannot clock in</p>
+                @* Nobody finds out until they are standing at a door. *@
+                <p class="card-note">Missing a password, an authenticator or a device.</p>
+                @if (Has(Permissions.MobileUserView))
+                {
+                    <a asp-controller="Employees" asp-action="Index">Who is waiting</a>
+                }
+            </div>
+
+            <div class="card">
+                <p class="card-figure">@s.ActiveDevices</p>
+                <p class="card-label">Active devices</p>
+                @if (Has(Permissions.DeviceView))
+                {
+                    <a asp-controller="Devices" asp-action="Index">All devices</a>
+                }
+            </div>
+
+            @* Zero is worth saying out loud: with no approved location every
+               clock-in fails the location check, however well everything else
+               is configured. *@
+            <div class="card @(s.ActiveOfficeLocations == 0 ? "card-alert" : null)">
+                <p class="card-figure">@s.ActiveOfficeLocations</p>
+                <p class="card-label">Active office locations</p>
+                @if (s.ActiveOfficeLocations == 0)
+                {
+                    <p class="card-note">With none, every clock-in is refused.</p>
+                }
+                @if (Has(Permissions.OfficeLocationView))
+                {
+                    <a asp-controller="Locations" asp-action="Index">Office locations</a>
+                }
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Refusals in the last 24 hours</h2>
+
+        <p class="card-note">
+            A handful is ordinary. A spike is a locked door, a moved office or
+            somebody trying — and all three are worth looking at.
+        </p>
+
+        <div class="cards">
+            <div class="card">
+                <p class="card-figure">@s.LocationRefusals</p>
+                <p class="card-label">Location checks refused</p>
+            </div>
+
+            <div class="card">
+                <p class="card-figure">@s.DeviceRefusals</p>
+                <p class="card-label">Device checks refused</p>
+            </div>
+
+            <div class="card @(s.CriticalEvents > 0 ? "card-alert" : null)">
+                <p class="card-figure">@s.CriticalEvents</p>
+                <p class="card-label">Critical security events</p>
+                @if (Has(Permissions.ReportView))
+                {
+                    <a asp-controller="Reports" asp-action="Failures">Refusals report</a>
+                }
+            </div>
+        </div>
+    </section>
 }
+
+<section class="panel">
+    <h2>Your permissions</h2>
+
+    @if (Model.Permissions.Count == 0)
+    {
+        <p>
+            Your account holds no permissions. Until a super administrator assigns a
+            role, every page will refuse you.
+        </p>
+    }
+    else
+    {
+        <ul class="permission-list">
+            @foreach (string permission in Model.Permissions)
+            {
+                <li><code>@permission</code></li>
+            }
+        </ul>
+    }
+</section>
